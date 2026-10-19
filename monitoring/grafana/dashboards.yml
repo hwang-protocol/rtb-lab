@@ -1,0 +1,10 @@
+# Grafana 启动时自动加载这个目录里的大盘 JSON
+apiVersion: 1
+providers:
+  - name: rtb-lab
+    folder: rtb-lab
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards

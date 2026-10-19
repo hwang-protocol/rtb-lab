@@ -47,6 +47,7 @@ public class LoadGen {
         int maxInFlight = args.length > 5 ? Integer.parseInt(args[5]) : 2000;
 
         String[] bodies = buildBodies(20_000, 100_000);
+        startReporter(System.getenv("LOADGEN_TEXTFILE"), rps);
         ExecutorService callbackPool = Executors.newFixedThreadPool(2);
         HttpClient client = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
@@ -92,6 +93,7 @@ public class LoadGen {
             outstanding.incrementAndGet();
             client.sendAsync(req, HttpResponse.BodyHandlers.discarding()).whenComplete((resp, err) -> {
                 long latency = System.nanoTime() - intended;
+                if (err == null) WINDOW.add(latency); else WINDOW_ERRORS.increment();
                 if (st != null) {
                     if (err == null) {
                         st.record(latency);
@@ -111,6 +113,56 @@ public class LoadGen {
         // 等待剩余请求完成（最多等超时时间 + 1 秒）
         long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs + 1000);
         while (outstanding.get() > 0 && System.nanoTime() < deadline) Thread.sleep(5);
+    }
+
+    // ---------- 每秒上报客户端延迟（给 Prometheus 用）----------
+    // 设置环境变量 LOADGEN_TEXTFILE=/var/lib/node_exporter/textfile/loadgen.prom 后启用：
+    // 每秒把"最近 1 秒"完成的请求的 P50/P99/P99.9 写进这个文件，node_exporter 的 textfile 采集器会读取它。
+    static final java.util.concurrent.ConcurrentLinkedQueue<Long> WINDOW = new java.util.concurrent.ConcurrentLinkedQueue<>();
+    static final LongAdder WINDOW_ERRORS = new LongAdder();
+
+    static void startReporter(String path, int targetRps) {
+        if (path == null || path.isBlank()) return;
+        java.nio.file.Path out = java.nio.file.Path.of(path);
+        java.nio.file.Path tmp = java.nio.file.Path.of(path + ".tmp");
+        Thread t = new Thread(() -> {
+            long errorsTotal = 0, completedTotal = 0;
+            while (true) {
+                try {
+                    Thread.sleep(1000);
+                    java.util.List<Long> batch = new java.util.ArrayList<>();
+                    Long v;
+                    while ((v = WINDOW.poll()) != null) batch.add(v);
+                    long[] a = batch.stream().mapToLong(Long::longValue).sorted().toArray();
+                    completedTotal += a.length;
+                    errorsTotal += WINDOW_ERRORS.sumThenReset();
+                    StringBuilder sb = new StringBuilder();
+                    sb.append("# HELP loadgen_latency_seconds 客户端看到的延迟（最近 1 秒，从计划发送时间算起）\n");
+                    sb.append("# TYPE loadgen_latency_seconds gauge\n");
+                    if (a.length > 0) {
+                        for (double q : new double[]{50, 99, 99.9}) {
+                            sb.append("loadgen_latency_seconds{quantile=\"").append(q / 100).append("\"} ")
+                              .append(Stats.p(a, q) / 1000.0).append('\n');
+                        }
+                    }
+                    sb.append("# TYPE loadgen_completed_total counter\nloadgen_completed_total ").append(completedTotal).append('\n');
+                    sb.append("# TYPE loadgen_errors_total counter\nloadgen_errors_total ").append(errorsTotal).append('\n');
+                    sb.append("# TYPE loadgen_target_rps gauge\nloadgen_target_rps ").append(targetRps).append('\n');
+                    sb.append("# TYPE loadgen_last_report_timestamp_seconds gauge\nloadgen_last_report_timestamp_seconds ")
+                      .append(System.currentTimeMillis() / 1000).append('\n');
+                    java.nio.file.Files.writeString(tmp, sb.toString());
+                    // 先写临时文件再改名：保证 node_exporter 永远读到完整的文件（原子替换）
+                    java.nio.file.Files.move(tmp, out, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                            java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+                } catch (InterruptedException e) {
+                    return;
+                } catch (Exception e) {
+                    System.err.println("reporter: " + e);
+                }
+            }
+        }, "metrics-reporter");
+        t.setDaemon(true);
+        t.start();
     }
 
     // 预先生成请求体（简化版 OpenRTB 2.x），避免压测过程中拼字符串影响测量

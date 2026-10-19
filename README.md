@@ -29,6 +29,30 @@ journalctl -u rtb-bidder -f
 curl -s localhost:8080/metrics
 ```
 
+## 监控（Prometheus + Grafana）
+
+```
+rocky9 虚拟机（全部只监听 127.0.0.1，systemd 管理，各自专用系统用户）
+ ├── rtb-bidder      :8080/metrics  竞价服务：QPS、出价/不出价、服务端耗时直方图、JVM 堆
+ ├── node_exporter   :9100/metrics  机器：CPU、负载、TCP 状态、上下文切换；
+ │                                   以及 textfile 采集器读取的 loadgen.prom（客户端延迟）
+ ├── Prometheus      :9090          每 5 秒抓取，保留 7 天
+ └── Grafana         :3000          大盘 "RTB Lab 总览"（自动导入）
+```
+
+```bash
+./monitoring/deploy-monitoring.sh      # Mac 上：安装 / 更新监控组件
+ssh -fN rocky9-mon                     # Mac 上：打开 SSH 隧道
+open http://localhost:3000             # Grafana：用户 admin，密码见虚拟机上的 ~/.config/rtb-lab/grafana-admin-password
+open http://localhost:9090             # Prometheus（可以直接写查询语句）
+ssh rocky9 'bash ~/rtb-lab/loadgen/run-scenario.sh'   # 约 5 分钟的演示流量，含一次故障重现
+```
+
+大盘修改：编辑 `monitoring/grafana/make_dashboard.py` → `python3 make_dashboard.py > rtb-overview.json` → 重新部署监控。
+
+**为什么同时看两种延迟：** 服务端耗时只统计"请求进入业务代码之后"的时间；
+排队、建连这些开销只有客户端能看到（排查记录 01 就是这种情况）。
+
 ## 目标（SLO）
 
 - P99 延迟 < 10 ms
@@ -44,6 +68,6 @@ curl -s localhost:8080/metrics
 
 - [ ] 压测程序移到独立机器，消除同机抢 CPU 的干扰
 - [ ] 接入 Redis（预算 / 频次），练习连接池与网络排查
-- [ ] Prometheus + Grafana 监控
+- [x] Prometheus + Grafana 监控
 - [ ] 故障注入：fd 上限、内存泄漏与 OOM、网卡软中断、吵闹邻居、磁盘写满、DNS 慢
 - [ ] Terraform + Ansible 部署到 EC2

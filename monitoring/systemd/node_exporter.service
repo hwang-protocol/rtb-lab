@@ -1,0 +1,15 @@
+[Unit]
+Description=Prometheus node_exporter (machine metrics)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=node_exporter
+Group=node_exporter
+ExecStart=/usr/local/bin/node_exporter \
+  --web.listen-address=127.0.0.1:9100 \
+  --collector.textfile.directory=/var/lib/node_exporter/textfile
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

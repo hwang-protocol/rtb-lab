@@ -92,8 +92,9 @@ public class Bidder {
         ExecutorService pool = Executors.newFixedThreadPool(threads);
         server.setExecutor(pool);
         server.createContext("/bid", Bidder::handleBid);
-        server.createContext("/health", ex -> reply(ex, 200, "ok\n"));
-        server.createContext("/metrics", ex -> reply(ex, 200, metrics()));
+        server.createContext("/health", ex -> reply(ex, 200, "ok\n", "text/plain; charset=utf-8"));
+        // Prometheus 3.x 要求指标接口返回它的文本格式类型，否则拒绝抓取
+        server.createContext("/metrics", ex -> reply(ex, 200, metrics(), "text/plain; version=0.0.4; charset=utf-8"));
         server.start();
         System.out.printf("bidder started: port=%d threads=%d campaigns=%d pid=%d%n",
                 port, threads, campaigns, ProcessHandle.current().pid());
@@ -197,11 +198,15 @@ public class Bidder {
     }
 
     static void reply(HttpExchange ex, int code, String body) throws IOException {
+        reply(ex, code, body, "application/json");
+    }
+
+    static void reply(HttpExchange ex, int code, String body, String contentType) throws IOException {
         if (body == null) {
             ex.sendResponseHeaders(code, -1);   // 204：没有响应体
         } else {
             byte[] b = body.getBytes(StandardCharsets.UTF_8);
-            ex.getResponseHeaders().set("Content-Type", "application/json");
+            ex.getResponseHeaders().set("Content-Type", contentType);
             ex.sendResponseHeaders(code, b.length);
             try (OutputStream os = ex.getResponseBody()) {
                 os.write(b);
@@ -224,11 +229,18 @@ public class Bidder {
 
     static String metrics() {
         StringBuilder sb = new StringBuilder();
+        // 每个指标先写 HELP（说明）和 TYPE（类型：counter 只增不减 / gauge 可增可减 / histogram 分布）
+        sb.append("# HELP bidder_requests_total 收到的竞价请求总数\n# TYPE bidder_requests_total counter\n");
         sb.append("bidder_requests_total ").append(REQUESTS.sum()).append('\n');
+        sb.append("# HELP bidder_bids_total 出价（HTTP 200）次数\n# TYPE bidder_bids_total counter\n");
         sb.append("bidder_bids_total ").append(BIDS.sum()).append('\n');
+        sb.append("# HELP bidder_nobids_total 不出价（HTTP 204）次数\n# TYPE bidder_nobids_total counter\n");
         sb.append("bidder_nobids_total ").append(NO_BIDS.sum()).append('\n');
+        sb.append("# HELP bidder_errors_total 处理出错次数\n# TYPE bidder_errors_total counter\n");
         sb.append("bidder_errors_total ").append(ERRORS.sum()).append('\n');
+        sb.append("# HELP bidder_freq_entries 频次计数表的条目数（没有过期清理，会一直增长）\n# TYPE bidder_freq_entries gauge\n");
         sb.append("bidder_freq_entries ").append(FREQ.size()).append('\n');
+        sb.append("# HELP bidder_latency_seconds 服务端处理一次竞价请求的耗时\n# TYPE bidder_latency_seconds histogram\n");
         long cumulative = 0;
         for (int i = 0; i < BUCKETS_MS.length; i++) {
             cumulative += BUCKET_COUNTS[i].sum();
@@ -240,6 +252,7 @@ public class Bidder {
         sb.append("bidder_latency_seconds_sum ").append(LATENCY_SUM_NANOS.sum() / 1e9).append('\n');
         sb.append("bidder_latency_seconds_count ").append(cumulative).append('\n');
         Runtime rt = Runtime.getRuntime();
+        sb.append("# HELP jvm_heap_used_bytes JVM 堆内存已使用字节数\n# TYPE jvm_heap_used_bytes gauge\n");
         sb.append("jvm_heap_used_bytes ").append(rt.totalMemory() - rt.freeMemory()).append('\n');
         return sb.toString();
     }
