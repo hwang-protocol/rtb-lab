@@ -6,7 +6,7 @@ HOST="${1:-rocky9}"
 cd "$(dirname "$0")/.."
 
 echo "==> 同步代码到 $HOST:~/rtb-lab"
-rsync -az --delete --exclude .git ./ "$HOST":rtb-lab/
+rsync -az --delete --exclude .git --exclude build/ ./ "$HOST":rtb-lab/
 
 ssh "$HOST" 'bash -s' <<'REMOTE'
 set -euo pipefail

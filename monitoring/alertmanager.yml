@@ -1,0 +1,24 @@
+# Alertmanager 配置：收到 Prometheus 发来的告警后，如何分组、去重、抑制、通知
+route:
+  receiver: local-log            # 默认接收方
+  group_by: ["alertname"]        # 同名告警合并成一条通知
+  group_wait: 10s                # 第一次收到告警后，等 10 秒，把同组的一起发出
+  group_interval: 1m             # 同一组有新告警时，至少间隔 1 分钟再通知
+  repeat_interval: 1h            # 告警一直没恢复，每小时重复提醒一次
+  routes:
+    - matchers: ['severity="critical"']
+      receiver: local-log
+      group_wait: 5s             # 严重告警更快发出
+
+receivers:
+  - name: local-log
+    webhook_configs:
+      # 本地告警接收器：把通知写进系统日志（journalctl -u alert-receiver）
+      # 以后接 Slack / 邮件 / PagerDuty 时，在这里增加对应的配置即可
+      - url: http://127.0.0.1:9095/alert
+        send_resolved: true      # 告警恢复时也发一次通知
+
+inhibit_rules:
+  # 竞价服务整个挂了时，不再发"延迟高 / 请求失败"这些连带告警，避免告警风暴
+  - source_matchers: ['alertname="BidderDown"']
+    target_matchers: ['alertname=~"BidderClientLatencyHigh|BidderServerLatencyHigh|LoadgenErrors"']

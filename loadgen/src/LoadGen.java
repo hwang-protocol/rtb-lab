@@ -163,6 +163,13 @@ public class LoadGen {
         }, "metrics-reporter");
         t.setDaemon(true);
         t.start();
+        // 退出时删除数据文件，避免残留的旧数值被当成当前数据（告警曾因此误报）
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            try {
+                java.nio.file.Files.deleteIfExists(out);
+            } catch (Exception ignored) {
+            }
+        }));
     }
 
     // 预先生成请求体（简化版 OpenRTB 2.x），避免压测过程中拼字符串影响测量

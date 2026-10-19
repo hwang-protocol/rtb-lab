@@ -1,0 +1,12 @@
+[Unit]
+Description=RTB lab local alert receiver (Alertmanager webhook -> journald)
+After=network-online.target
+
+[Service]
+User=alertrx
+Group=alertrx
+ExecStart=/usr/bin/python3 /opt/alert-receiver/receiver.py
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

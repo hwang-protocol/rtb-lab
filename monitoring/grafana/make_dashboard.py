@@ -7,6 +7,13 @@ LOADGEN_ALIVE = "and on() (time() - loadgen_last_report_timestamp_seconds < 10)"
 CPU_COUNT = "scalar(count(count by (cpu)(node_cpu_seconds_total)))"
 
 panels_spec = [
+    ("row", "⓪ 告警（Prometheus 规则 → Alertmanager）"),
+    ("正在触发的告警（firing）", "short", True, [
+        ('sum by (alertname)(ALERTS{alertstate="firing"})', "{{alertname}}"),
+    ]),
+    ("即将触发的告警（pending：条件已满足，还在等 for 的时间）", "short", True, [
+        ('sum by (alertname)(ALERTS{alertstate="pending"})', "{{alertname}}"),
+    ]),
     ("row", "① 用户体验：延迟与流量"),
     ("客户端延迟（压测程序看到的，含建连、排队）", "ms", False, [
         (f"loadgen_latency_seconds{{quantile=\"0.5\"}} * 1000 {LOADGEN_ALIVE}", "P50"),

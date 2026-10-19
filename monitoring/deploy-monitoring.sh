@@ -4,5 +4,5 @@
 set -euo pipefail
 HOST="${1:-rocky9}"
 cd "$(dirname "$0")/.."
-rsync -az --delete --exclude .git ./ "$HOST":rtb-lab/
+rsync -az --delete --exclude .git --exclude build/ ./ "$HOST":rtb-lab/
 ssh "$HOST" 'bash ~/rtb-lab/monitoring/install-monitoring.sh'

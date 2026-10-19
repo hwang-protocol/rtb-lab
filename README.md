@@ -29,24 +29,35 @@ journalctl -u rtb-bidder -f
 curl -s localhost:8080/metrics
 ```
 
-## 监控（Prometheus + Grafana）
+## 监控与告警（Prometheus + Grafana + Alertmanager）
 
 ```
 rocky9 虚拟机（全部只监听 127.0.0.1，systemd 管理，各自专用系统用户）
  ├── rtb-bidder      :8080/metrics  竞价服务：QPS、出价/不出价、服务端耗时直方图、JVM 堆
  ├── node_exporter   :9100/metrics  机器：CPU、负载、TCP 状态、上下文切换；
  │                                   以及 textfile 采集器读取的 loadgen.prom（客户端延迟）
- ├── Prometheus      :9090          每 5 秒抓取，保留 7 天
- └── Grafana         :3000          大盘 "RTB Lab 总览"（自动导入）
+ ├── Prometheus      :9090          每 5 秒抓取，保留 7 天；按 monitoring/alerts/ 里的规则计算告警
+ ├── Alertmanager    :9093          告警分组、去重、抑制、路由
+ ├── alert-receiver  :9095          本地告警接收器：把通知写进 journald（实验环境代替 Slack / 邮件）
+ └── Grafana         :3000          大盘 "RTB Lab 总览"（自动导入，顶部一排显示告警）
 ```
 
 ```bash
 ./monitoring/deploy-monitoring.sh      # Mac 上：安装 / 更新监控组件
-ssh -fN rocky9-mon                     # Mac 上：打开 SSH 隧道
+ssh -fN rocky9-mon                     # Mac 上：打开 SSH 隧道（3000 / 9090 / 9093）
 open http://localhost:3000             # Grafana：用户 admin，密码见虚拟机上的 ~/.config/rtb-lab/grafana-admin-password
-open http://localhost:9090             # Prometheus（可以直接写查询语句）
-ssh rocky9 'bash ~/rtb-lab/loadgen/run-scenario.sh'   # 约 5 分钟的演示流量，含一次故障重现
+open http://localhost:9090/alerts      # Prometheus：告警规则及其状态（inactive / pending / firing）
+open http://localhost:9093             # Alertmanager：当前告警、静默（silence）
+ssh rocky9 'bash ~/rtb-lab/monitoring/verify-alerting.sh'   # 端到端验证告警链路（约 7 分钟）
+ssh rocky9 'journalctl -u alert-receiver -f'               # 实时看告警通知
+ssh rocky9 'bash ~/rtb-lab/loadgen/run-scenario.sh'        # 约 5 分钟演示流量，含一次故障重现
+ssh rocky9 'bash ~/rtb-lab/loadgen/run-scenario.sh fault'  # 只跑 2 分钟故障，用来测试告警
 ```
+
+告警规则（`monitoring/alerts/rtb-lab-rules.yml`，阈值依据实测数据）：
+BidderDown、BidderClientLatencyHigh（客户端 P99 > 10 ms）、BidderServerLatencyHigh、LoadgenErrors、
+BidderFreqTableGrowing、TcpTimeWaitHigh、NodeCpuHigh、NodeMemoryLow、NodeDiskSpaceLow、ExporterDown。
+抑制规则：BidderDown 触发时，不再通知它引起的延迟 / 错误类告警。
 
 大盘修改：编辑 `monitoring/grafana/make_dashboard.py` → `python3 make_dashboard.py > rtb-overview.json` → 重新部署监控。
 
@@ -63,11 +74,15 @@ ssh rocky9 'bash ~/rtb-lab/loadgen/run-scenario.sh'   # 约 5 分钟的演示流
 | # | 主题 | 结果 |
 |---|---|---|
 | 01 | [5000 rps 时延迟暴涨：TCP 连接反复重建](results/2026-10-19-01-connection-churn.md) | P50 45.9 ms → 0.25 ms，P99 60 ms → 5.6 ms |
+| 02 | [告警链路端到端验证](results/2026-10-19-02-alerting-verification.md) | 触发 / 恢复 / 静默 / 抑制全部生效 |
 
 ## 计划
 
 - [ ] 压测程序移到独立机器，消除同机抢 CPU 的干扰
 - [ ] 接入 Redis（预算 / 频次），练习连接池与网络排查
 - [x] Prometheus + Grafana 监控
+- [x] Alertmanager 告警（本地 webhook 接收器）
+- [ ] 告警接入真实通知渠道（Slack / 邮件）
+- [ ] 日志集中收集（Loki）
 - [ ] 故障注入：fd 上限、内存泄漏与 OOM、网卡软中断、吵闹邻居、磁盘写满、DNS 慢
 - [ ] Terraform + Ansible 部署到 EC2

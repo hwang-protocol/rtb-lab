@@ -6,6 +6,7 @@ cd "$(dirname "$0")"
 
 PROM_VER=3.15.0
 NODE_VER=1.12.1
+AM_VER=0.34.1
 ARCH=linux-arm64            # Apple 芯片虚拟机是 ARM；在 x86 的 EC2 上改成 linux-amd64
 # Grafana 管理员密码：不写在代码里。优先用环境变量；否则读取 / 首次随机生成，保存在只有本人可读的文件中
 PW_FILE="$HOME/.config/rtb-lab/grafana-admin-password"
@@ -44,11 +45,31 @@ if ! /usr/local/bin/prometheus --version 2>/dev/null | grep -q "version $PROM_VE
   install_prom_binary prometheus "$PROM_VER" prometheus promtool
 fi
 add_system_user prometheus
-sudo mkdir -p /etc/prometheus /var/lib/prometheus
+sudo mkdir -p /etc/prometheus/rules /var/lib/prometheus
 sudo cp prometheus.yml /etc/prometheus/prometheus.yml
+sudo rm -f /etc/prometheus/rules/*.yml
+sudo cp alerts/*.yml /etc/prometheus/rules/
 sudo chown -R prometheus:prometheus /var/lib/prometheus
-echo "==> 检查 Prometheus 配置语法"
+echo "==> 检查 Prometheus 配置和告警规则语法"
 /usr/local/bin/promtool check config /etc/prometheus/prometheus.yml
+
+# ---------- Alertmanager ----------
+if ! /usr/local/bin/alertmanager --version 2>&1 | grep -q "version $AM_VER"; then
+  install_prom_binary alertmanager "$AM_VER" alertmanager amtool
+fi
+add_system_user alertmanager
+sudo mkdir -p /etc/alertmanager /var/lib/alertmanager
+sudo cp alertmanager.yml /etc/alertmanager/alertmanager.yml
+sudo chown -R alertmanager:alertmanager /var/lib/alertmanager
+echo "==> 检查 Alertmanager 配置语法"
+/usr/local/bin/amtool check-config /etc/alertmanager/alertmanager.yml
+
+# ---------- 本地告警接收器（Alertmanager webhook → journald）----------
+add_system_user alertrx
+sudo mkdir -p /opt/alert-receiver
+sudo install -m 0644 alert-receiver/receiver.py /opt/alert-receiver/receiver.py
+sudo restorecon -R /etc/alertmanager /var/lib/alertmanager /opt/alert-receiver 2>/dev/null || true
+sudo cp systemd/alertmanager.service systemd/alert-receiver.service /etc/systemd/system/
 
 # ---------- node_exporter ----------
 if ! /usr/local/bin/node_exporter --version 2>&1 | grep -q "version $NODE_VER"; then
@@ -96,14 +117,16 @@ sudo chown -R grafana:grafana /var/lib/grafana/dashboards
 
 # ---------- 启动 ----------
 sudo systemctl daemon-reload
-sudo systemctl enable --now node_exporter prometheus grafana-server
-sudo systemctl restart node_exporter prometheus grafana-server
+SERVICES="node_exporter alert-receiver alertmanager prometheus grafana-server"
+sudo systemctl enable --now $SERVICES
+sudo systemctl restart $SERVICES
 
 echo "==> 等待服务就绪"
 for i in $(seq 1 60); do
-  curl -sf http://127.0.0.1:9090/-/ready >/dev/null && curl -sf http://127.0.0.1:3000/api/health >/dev/null && break
+  curl -sf http://127.0.0.1:9090/-/ready >/dev/null && curl -sf http://127.0.0.1:9093/-/ready >/dev/null \
+    && curl -sf http://127.0.0.1:3000/api/health >/dev/null && break
   sleep 1
 done
-systemctl --no-pager is-active node_exporter prometheus grafana-server
+for s in $SERVICES; do printf "  %-16s %s\n" "$s" "$(systemctl is-active "$s")"; done
 echo "==> Prometheus 抓取目标状态："
 curl -s http://127.0.0.1:9090/api/v1/targets | python3 -c 'import json,sys;[print("  ",t["labels"]["job"],t["health"],t.get("lastError","")) for t in json.load(sys.stdin)["data"]["activeTargets"]]'

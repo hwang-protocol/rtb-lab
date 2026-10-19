@@ -1,0 +1,107 @@
+# Prometheus 告警规则
+# 每条规则：expr 是条件；for 是"持续多久才算真的出问题"（避免瞬时抖动误报）；
+# labels.severity 决定严重程度；annotations 是通知里给人看的说明（摘要 + 排查提示）。
+#
+# 阈值依据 results/ 里的实测数据：
+#   5000 rps 正常：客户端 P99（1 分钟平均）约 2 ms，TIME-WAIT 峰值约 1,700
+#   5000 rps 故障：客户端 P99 约 60 ms，TIME-WAIT 峰值约 13,900
+
+groups:
+  - name: rtb-bidder
+    rules:
+      - alert: BidderDown
+        expr: up{job="rtb-bidder"} == 0
+        for: 15s
+        labels:
+          severity: critical
+        annotations:
+          summary: "竞价服务无法抓取（进程挂了或 /metrics 不可用）"
+          hint: "systemctl status rtb-bidder；journalctl -u rtb-bidder -n 50"
+
+      - alert: BidderClientLatencyHigh
+        # 后半句：压测程序最近 10 秒内上报过才算数。否则它退出后 textfile 里残留的旧数值会一直触发告警（曾经误报过）
+        expr: >
+          avg_over_time(loadgen_latency_seconds{quantile="0.99"}[1m]) * 1000 > 10
+          and on() (time() - loadgen_last_report_timestamp_seconds < 10)
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "客户端 P99 延迟 {{ $value | printf \"%.1f\" }} ms，超过 SLO 10 ms"
+          hint: "先对比服务端耗时：服务端正常则查连接（ss -s、TIME-WAIT）、排队、网络；参见 results/2026-10-19-01"
+
+      - alert: BidderServerLatencyHigh
+        expr: histogram_quantile(0.99, sum by (le)(rate(bidder_latency_seconds_bucket[1m]))) * 1000 > 5
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "服务端处理耗时 P99 {{ $value | printf \"%.1f\" }} ms"
+          hint: "业务代码本身变慢：看 CPU、GC 日志（/var/log/rtb-bidder/gc.log）、火焰图"
+
+      - alert: LoadgenErrors
+        expr: >
+          rate(loadgen_errors_total[1m]) > 1
+          and on() (time() - loadgen_last_report_timestamp_seconds < 10)
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "客户端每秒 {{ $value | printf \"%.1f\" }} 个请求失败（超时 / 连接错误）"
+          hint: "ss -s；journalctl -u rtb-bidder；检查连接数和文件描述符上限"
+
+      - alert: BidderFreqTableGrowing
+        expr: bidder_freq_entries > 5e6
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "频次计数表已有 {{ $value | humanize }} 条，可能存在内存泄漏"
+          hint: "看 JVM 堆内存趋势；该表没有过期清理"
+
+  - name: node
+    rules:
+      - alert: TcpTimeWaitHigh
+        expr: node_sockstat_TCP_tw > 5000
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "TIME-WAIT 连接 {{ $value | humanize }} 个，连接可能在被频繁重建"
+          hint: "ss -tan state time-wait | wc -l；检查客户端/服务端长连接与连接池配置"
+
+      - alert: NodeCpuHigh
+        expr: (1 - avg(rate(node_cpu_seconds_total{mode="idle"}[1m]))) * 100 > 85
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CPU 使用率 {{ $value | printf \"%.0f\" }}%"
+          hint: "top / pidstat -u 1；区分 user / system / softirq"
+
+      - alert: NodeMemoryLow
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100 < 10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "可用内存只剩 {{ $value | printf \"%.0f\" }}%"
+          hint: "free -h；ps aux --sort=-rss | head；dmesg | grep -i oom"
+
+      - alert: NodeDiskSpaceLow
+        expr: node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} * 100 < 15
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "根分区可用空间只剩 {{ $value | printf \"%.0f\" }}%"
+          hint: "df -h；du -xh / --max-depth=2 | sort -h | tail；lsof | grep deleted"
+
+      - alert: ExporterDown
+        expr: up{job=~"node|prometheus"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "监控组件 {{ $labels.job }} 无法抓取"
+          hint: "systemctl status node_exporter prometheus"
