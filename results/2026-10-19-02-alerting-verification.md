@@ -61,6 +61,7 @@
 ## 复现
 
 ```bash
-bash deploy/deploy.sh && bash monitoring/deploy-monitoring.sh
+# 当时用的 bash 部署脚本已被 Ansible 取代：
+(cd ansible && ansible-playbook site.yml)
 ssh rocky9 'bash ~/rtb-lab/monitoring/verify-alerting.sh'
 ```

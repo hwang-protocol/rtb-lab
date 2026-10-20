@@ -25,7 +25,7 @@ load() {  # 参数：速率 秒数
 }
 
 # 开始前检查：压测程序是否已编译（部署脚本的 rsync 曾误删 build/ 目录）
-[ -f build/loadgen/LoadGen.class ] || { echo "❌ 找不到 build/loadgen/LoadGen.class，请先运行 deploy/deploy.sh"; exit 1; }
+[ -f build/loadgen/LoadGen.class ] || { echo "❌ 找不到 build/loadgen/LoadGen.class，请先在 Mac 上运行：cd ansible && ansible-playbook site.yml"; exit 1; }
 
 restart_bidder() {
   sudo systemctl daemon-reload

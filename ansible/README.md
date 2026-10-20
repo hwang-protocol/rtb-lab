@@ -1,6 +1,6 @@
 # Ansible 部署
 
-用 playbook 部署整个 rtb-lab，替代 `deploy/deploy.sh` 和 `monitoring/install-monitoring.sh`。
+用 playbook 部署整个 rtb-lab。原来的 bash 部署脚本已经删除（见 git 历史）。
 同一份 playbook 以后部署到 EC2，只需要换一份机器清单（inventory）。
 
 ## 第一次使用（Mac 上）
@@ -29,6 +29,28 @@ ansible-playbook site.yml --tags prometheus  # 只部署某一个组件
 ansible-playbook site.yml --check --diff     # 预演：只显示会改什么，不真的改
 ```
 
+## 竞价服务的发布和回滚
+
+```bash
+ansible-playbook build.yml                   # 按 git 提交号打包；有未提交的改动会拒绝（-e allow_dirty=true 强制）
+ansible-playbook deploy.yml                  # 发布最新构建的版本，失败自动回滚
+ansible-playbook deploy.yml -e version=<版本>
+ansible-playbook rollback.yml                # 回到上一个成功发布过的版本（读 HISTORY）
+ansible-playbook rollback.yml -e version=<版本>
+```
+
+机器上的目录：
+
+```
+/opt/rtb-bidder/
+├── releases/<版本>/     每个版本单独一个目录（最多保留 5 个），里面有 VERSION 文件
+├── current → releases/<版本>   systemd 从这里启动；切换后必须重启
+└── HISTORY             每次成功发布的时间和版本
+```
+
+发布的检查：`/health` 返回的版本号必须是新版本，再发一个真实的 `/bid` 请求；
+发现 systemd 已经自动重启过（`NRestarts > 0`）就立刻判定失败。演练见 [记录 #03](../results/2026-10-20-03-bad-deploy-rollback.md)。
+
 ## 目录结构
 
 ```
@@ -41,7 +63,7 @@ ansible/
 └── roles/
     ├── base/                Java 21、rsync 等基础软件包
     ├── rtb_code/            同步代码、编译（代码有变化才重新编译）
-    ├── bidder/              竞价服务：用户、目录、systemd、健康检查
+    ├── bidder/              竞价服务的机器部分：用户、目录、systemd（程序由 deploy.yml 发布）
     ├── prom_binary/         通用：下载 Prometheus 系列二进制包并校验 SHA256
     ├── node_exporter/
     ├── alertmanager/        Alertmanager + 本地告警接收器

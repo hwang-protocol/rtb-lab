@@ -9,14 +9,19 @@
 |---|---|
 | `bidder/` | 竞价服务（Java 21，只用 JDK 自带库）。`POST /bid` 竞价，`/health`，`/metrics`（Prometheus 格式） |
 | `loadgen/` | 压测程序：开环固定速率发送简化版 OpenRTB 请求，输出 P50/P90/P99/P99.9、超时率 |
-| `deploy/` | systemd 服务文件 + 部署脚本（同步代码 → 编译 → 安装为 `rtb-bidder.service`） |
+| `deploy/` | 竞价服务的 systemd 服务文件 |
+| `ansible/` | 部署：机器配置、版本化发布、自动回滚（[说明](ansible/README.md)） |
 | `results/` | 每次实验 / 排查的记录 |
 
 ## 使用
 
 ```bash
-# 在 Mac 上：部署到虚拟机（默认 ssh 主机名 rocky9）
-./deploy/deploy.sh
+# 在 Mac 上：部署整套环境到虚拟机（ssh 主机名 rocky9），详见 ansible/README.md
+cd ansible && ansible-playbook site.yml
+
+# 改了竞价服务的代码以后：提交，然后构建并发布（失败会自动回滚）
+ansible-playbook build.yml && ansible-playbook deploy.yml
+ansible-playbook rollback.yml          # 手动回到上一个版本
 
 # 在虚拟机上：压测（每秒 3000 个请求，持续 20 秒）
 ssh rocky9
@@ -45,7 +50,7 @@ rocky9 虚拟机（全部只监听 127.0.0.1，systemd 管理，各自专用系�
 ```
 
 ```bash
-./monitoring/deploy-monitoring.sh      # Mac 上：安装 / 更新监控组件
+(cd ansible && ansible-playbook site.yml --tags monitoring)   # Mac 上：安装 / 更新监控组件
 ssh -fN rocky9-mon                     # Mac 上：打开 SSH 隧道（3000 / 9090 / 9093）
 open http://localhost:3000             # Grafana：用户 admin，密码见虚拟机上的 ~/.config/rtb-lab/grafana-admin-password
 open http://localhost:9090/alerts      # Prometheus：告警规则及其状态（inactive / pending / firing）
@@ -81,6 +86,7 @@ BidderFreqTableGrowing、TcpTimeWaitHigh、NodeCpuHigh、NodeMemoryLow、NodeDis
 |---|---|---|
 | 01 | [5000 rps 时延迟暴涨：TCP 连接反复重建](results/2026-10-19-01-connection-churn.md) | P50 45.9 ms → 0.25 ms，P99 60 ms → 5.6 ms |
 | 02 | [告警链路端到端验证](results/2026-10-19-02-alerting-verification.md) | 触发 / 恢复 / 静默 / 抑制全部生效 |
+| 03 | [坏版本发布演练：自动回滚](results/2026-10-20-03-bad-deploy-rollback.md) | 服务中断 28 秒 → 3 秒，失败请求减少 89% |
 
 ## 计划
 

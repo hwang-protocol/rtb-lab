@@ -15,7 +15,7 @@ ts() { date +%T; }
 step() { echo; echo "======== $(ts) $* ========"; }
 
 # 开始前检查：压测程序必须已编译，否则 ④⑤ 会因为没有流量而"假失败"
-[ -f build/loadgen/LoadGen.class ] || { echo "❌ 找不到 build/loadgen/LoadGen.class，请先运行 deploy/deploy.sh"; exit 1; }
+[ -f build/loadgen/LoadGen.class ] || { echo "❌ 找不到 build/loadgen/LoadGen.class，请先在 Mac 上运行：cd ansible && ansible-playbook site.yml"; exit 1; }
 
 prom_alerts() {   # 打印 Prometheus 里当前的告警及状态（pending / firing）
   curl -s $PROM/api/v1/alerts | python3 -c '
