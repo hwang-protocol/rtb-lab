@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.LongAdder;
  *
  * 接口：
  *   POST /bid      竞价
- *   GET  /health   健康检查
+ *   GET  /health   健康检查，返回 "ok <版本号>"（部署脚本用它确认新版本真的起来了）
  *   GET  /metrics  Prometheus 格式的指标（请求数、出价数、服务端延迟分布）
  *
  * 配置（环境变量）：
@@ -77,6 +77,9 @@ public class Bidder {
     static final LongAdder[] BUCKET_COUNTS = new LongAdder[BUCKETS_MS.length + 1];
     static final LongAdder LATENCY_SUM_NANOS = new LongAdder();
 
+    // 版本号：由 systemd 启动时从发布目录的 VERSION 文件读出，经 -Dbidder.version 传入
+    static final String VERSION = System.getProperty("bidder.version", "unknown");
+
     static {
         for (int i = 0; i < BUCKET_COUNTS.length; i++) BUCKET_COUNTS[i] = new LongAdder();
     }
@@ -92,12 +95,12 @@ public class Bidder {
         ExecutorService pool = Executors.newFixedThreadPool(threads);
         server.setExecutor(pool);
         server.createContext("/bid", Bidder::handleBid);
-        server.createContext("/health", ex -> reply(ex, 200, "ok\n", "text/plain; charset=utf-8"));
+        server.createContext("/health", ex -> reply(ex, 200, "ok " + VERSION + "\n", "text/plain; charset=utf-8"));
         // Prometheus 3.x 要求指标接口返回它的文本格式类型，否则拒绝抓取
         server.createContext("/metrics", ex -> reply(ex, 200, metrics(), "text/plain; version=0.0.4; charset=utf-8"));
         server.start();
-        System.out.printf("bidder started: port=%d threads=%d campaigns=%d pid=%d%n",
-                port, threads, campaigns, ProcessHandle.current().pid());
+        System.out.printf("bidder started: version=%s port=%d threads=%d campaigns=%d pid=%d%n",
+                VERSION, port, threads, campaigns, ProcessHandle.current().pid());
     }
 
     // 随机生成广告活动（固定随机种子，保证每次启动数据一样，实验可复现）
@@ -251,6 +254,9 @@ public class Bidder {
         sb.append("bidder_latency_seconds_bucket{le=\"+Inf\"} ").append(cumulative).append('\n');
         sb.append("bidder_latency_seconds_sum ").append(LATENCY_SUM_NANOS.sum() / 1e9).append('\n');
         sb.append("bidder_latency_seconds_count ").append(cumulative).append('\n');
+        // 惯例写法：值固定为 1，版本放在标签里；大盘上可以看到每次发布的时间点
+        sb.append("# HELP bidder_build_info 当前运行的版本\n# TYPE bidder_build_info gauge\n");
+        sb.append("bidder_build_info{version=\"").append(VERSION).append("\"} 1\n");
         Runtime rt = Runtime.getRuntime();
         sb.append("# HELP jvm_heap_used_bytes JVM 堆内存已使用字节数\n# TYPE jvm_heap_used_bytes gauge\n");
         sb.append("jvm_heap_used_bytes ").append(rt.totalMemory() - rt.freeMemory()).append('\n');

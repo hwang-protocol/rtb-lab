@@ -12,7 +12,9 @@ Environment=BIDDER_PORT=8080
 Environment=BIDDER_CAMPAIGNS=2000
 # JVM：固定堆大小、打开 GC 日志（以后排查 GC 停顿要用）
 Environment="JAVA_OPTS=-Xms512m -Xmx512m -XX:+UseG1GC -XX:UseSVE=0 -Dsun.net.httpserver.maxIdleConnections=2000 -Xlog:gc*:file=/var/log/rtb-bidder/gc.log:time,uptime:filecount=5,filesize=10m"
-ExecStart=/bin/sh -c 'exec /usr/bin/java $JAVA_OPTS -cp /opt/rtb-bidder/classes Bidder'
+# 版本化发布：/opt/rtb-bidder/releases/<版本>/，current 是指向当前版本的符号链接（由 ansible/deploy.yml 切换）。
+# 符号链接只在进程启动时解析一次：切换 current 之后必须重启，正在运行的进程不受影响。
+ExecStart=/bin/sh -c 'exec /usr/bin/java $JAVA_OPTS -Dbidder.version=$(cat /opt/rtb-bidder/current/VERSION) -cp /opt/rtb-bidder/current Bidder'
 Restart=on-failure
 RestartSec=2
 LimitNOFILE=65536
