@@ -66,7 +66,7 @@
 
 - [x] 使用**个人** AWS 账号（免费套餐：额度 $120，**2027-04-20 到期**，到期前要决定是否升级，否则账号会被关闭）
 - [x] 根账号开启 MFA；根账号没有长期密钥（2026-10-20 用 CLI 核对）
-- [ ] 🟡 **AWS Budgets 预算告警：每月超过 10 美元发邮件**（目前只有 Zero-Spend 预算）
+- [x] **AWS Budgets 预算 `rtb-lab-monthly-10usd`**：每月 10 美元，按实际用量计算（不扣免费额度），实际 50% / 100% 和预测 100% 时发邮件
 - [x] 日常使用的 IAM 用户 `hongzheng`（控制台密码 + MFA，0 个 Access Key）；CLI：`aws login --profile rtb-lab`，临时凭证
   - 没有用 IAM Identity Center：开启它会自动创建 Organization，账号会升级为付费、免费额度立刻作废（2026-10-20 在控制台确认）
 - [x] Mac 上安装 AWS CLI 2.38.0（Amazon 签名已校验）、Terraform 1.16.5（SHA256 已校验），都在 `~/.local/bin`；没有长期凭证
