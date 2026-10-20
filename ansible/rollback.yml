@@ -1,0 +1,37 @@
+# 回滚竞价服务：ansible-playbook rollback.yml                  （回到上一个成功发布过的版本）
+#               ansible-playbook rollback.yml -e version=<版本>  （回到指定版本，必须还在机器上）
+- name: 回滚竞价服务
+  hosts: bidder
+  become: true
+  serial: 1
+  tasks:
+    - name: 当前版本
+      ansible.builtin.stat: { path: "{{ bidder_home }}/current" }
+      register: current_link
+
+    - name: 读取发布历史
+      ansible.builtin.slurp: { src: "{{ bidder_home }}/HISTORY" }
+      register: history
+      when: version is not defined
+
+    - name: 确定回滚目标
+      ansible.builtin.set_fact:
+        current_version: "{{ current_link.stat.lnk_target | basename }}"
+        target_version: >-
+          {{ version | default(
+               (history.content | b64decode).splitlines() | map('split') | map('last')
+               | reject('equalto', current_link.stat.lnk_target | basename) | list | last
+               | default('')) }}
+
+    - name: 检查目标版本是否还在机器上
+      ansible.builtin.stat: { path: "{{ bidder_home }}/releases/{{ target_version }}/VERSION" }
+      register: target_dir
+
+    - name: 目标版本不可用
+      ansible.builtin.assert:
+        that: [target_version != '', target_dir.stat.exists]
+        fail_msg: "找不到可回滚的版本 '{{ target_version }}'。机器上已有的版本：ls {{ bidder_home }}/releases"
+
+    - name: "回滚 {{ current_version }} → {{ target_version }}"
+      ansible.builtin.include_tasks: tasks/activate_release.yml
+      vars: { release: "{{ target_version }}" }

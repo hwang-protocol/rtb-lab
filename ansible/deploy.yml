@@ -1,0 +1,90 @@
+# 发布竞价服务：ansible-playbook deploy.yml                  （发布最新构建的版本）
+#               ansible-playbook deploy.yml -e version=<版本>  （发布指定版本）
+# 流程：校验 SHA256 → 解压 → 切换 current → 重启 → 健康检查 + 冒烟测试；任何一步失败，自动回滚到上一个版本。
+- name: 发布竞价服务
+  hosts: bidder
+  become: true
+  serial: 1            # 多台机器时一次只发布一台：这台通过检查才发布下一台
+  tasks:
+    - name: 读取最新构建的版本号
+      ansible.builtin.slurp: { src: "{{ artifact_dir }}/LATEST" }
+      register: latest
+      when: version is not defined
+
+    - name: 确定要发布的版本
+      ansible.builtin.set_fact:
+        target_version: "{{ version | default(latest.content | b64decode | trim) }}"
+
+    - name: 校验制品的 SHA256（被篡改或下载不完整就停止）
+      ansible.builtin.command: "sha256sum -c bidder-{{ target_version }}.tar.gz.sha256"
+      args: { chdir: "{{ artifact_dir }}" }
+      changed_when: false
+
+    - name: 当前版本
+      ansible.builtin.stat: { path: "{{ bidder_home }}/current" }
+      register: current_link
+
+    - name: 记下上一个版本（失败时回滚到它）
+      ansible.builtin.set_fact:
+        previous_version: "{{ current_link.stat.lnk_target | basename if current_link.stat.exists else '' }}"
+
+    - name: 已经是这个版本并且健康，什么也不做
+      ansible.builtin.uri: { url: http://127.0.0.1:8080/health, return_content: true }
+      register: health_now
+      failed_when: false
+      when: previous_version == target_version
+
+    - name: 结束（无需发布）
+      ansible.builtin.meta: end_host
+      when: previous_version == target_version and (('ok ' ~ target_version) in (health_now.content | default('')))
+
+    - name: 版本目录
+      ansible.builtin.file:
+        path: "{{ bidder_home }}/releases/{{ target_version }}"
+        state: directory
+        owner: rtb
+        group: rtb
+        mode: "0755"
+
+    - name: 解压制品
+      ansible.builtin.unarchive:
+        src: "{{ artifact_dir }}/bidder-{{ target_version }}.tar.gz"
+        dest: "{{ bidder_home }}/releases/{{ target_version }}"
+        remote_src: true
+        owner: rtb
+        group: rtb
+        creates: "{{ bidder_home }}/releases/{{ target_version }}/VERSION"
+
+    - name: 发布（失败自动回滚）
+      block:
+        - name: "启用新版本 {{ target_version }}"
+          ansible.builtin.include_tasks: tasks/activate_release.yml
+          vars: { release: "{{ target_version }}" }
+
+      rescue:
+        - name: 第一次发布就失败，没有可回滚的版本
+          ansible.builtin.fail:
+            msg: "版本 {{ target_version }} 发布失败，而且这台机器上没有上一个版本可以回滚。查看：journalctl -u rtb-bidder -n 50"
+          when: previous_version == ''
+
+        - name: 发布失败，开始自动回滚
+          ansible.builtin.debug:
+            msg: "版本 {{ target_version }} 没有通过检查，自动回滚到 {{ previous_version }}"
+
+        - name: "回滚到 {{ previous_version }}"
+          ansible.builtin.include_tasks: tasks/activate_release.yml
+          vars: { release: "{{ previous_version }}" }
+
+        - name: 回滚完成，本次发布记为失败
+          ansible.builtin.fail:
+            msg: "版本 {{ target_version }} 发布失败，已自动回滚到 {{ previous_version }}，服务正常。原因查看：journalctl -u rtb-bidder -n 50"
+
+    - name: 列出机器上的所有版本
+      ansible.builtin.find: { paths: "{{ bidder_home }}/releases", file_type: directory }
+      register: all_releases
+
+    - name: "只保留最近 {{ releases_keep }} 个版本（当前版本和上一个版本一定保留）"
+      ansible.builtin.file: { path: "{{ item.path }}", state: absent }
+      loop: "{{ (all_releases.files | sort(attribute='mtime', reverse=true))[releases_keep:] }}"
+      loop_control: { label: "{{ item.path | basename }}" }
+      when: (item.path | basename) not in [target_version, previous_version]

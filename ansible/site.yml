@@ -27,3 +27,12 @@
     - { role: loki, tags: [monitoring, loki] }
     - { role: alloy, tags: [monitoring, alloy] }
     - { role: grafana, tags: [monitoring, grafana] }
+
+# 竞价服务程序本身：构建并发布当前提交的版本（失败自动回滚）
+- name: 构建
+  ansible.builtin.import_playbook: build.yml
+  tags: [bidder, release]
+
+- name: 发布
+  ansible.builtin.import_playbook: deploy.yml
+  tags: [bidder, release]

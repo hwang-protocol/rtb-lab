@@ -1,0 +1,55 @@
+# 构建竞价服务制品：ansible-playbook build.yml
+# 产出 bidder-<版本>.tar.gz + .sha256，放进制品目录，并把版本号写进 LATEST（deploy.yml 默认发布它）。
+# 现在在目标机器上编译；上 EC2 后改成在构建机上编译，再上传 S3。
+- name: 构建竞价服务制品
+  hosts: bidder
+  pre_tasks:
+    - name: 检查是否有未提交的改动（只看会进入制品的文件）
+      ansible.builtin.set_fact:
+        build_dirty: "{{ lookup('ansible.builtin.pipe', 'git -C ' ~ (repo_root | quote) ~ ' status --porcelain -- bidder deploy/rtb-bidder.service') | length > 0 }}"
+        build_time: "{{ now(fmt='%Y%m%d%H%M%S') }}"
+      run_once: true
+
+    - name: 有未提交的改动时拒绝构建（版本号必须能对应到 git 里的代码）
+      ansible.builtin.assert:
+        that: not build_dirty or (allow_dirty | default(false) | bool)
+        fail_msg: "bidder/ 有未提交的改动。先提交；确实要试验未提交的代码，加 -e allow_dirty=true（版本号会带 -dirty 标记）"
+
+    - name: 确定版本号
+      ansible.builtin.set_fact:
+        build_version: "{{ git_version ~ (('-dirty-' ~ build_time) if build_dirty else '') }}"
+      run_once: true
+
+  roles:
+    - rtb_code      # 同步代码并编译
+
+  tasks:
+    - name: 制品目录
+      ansible.builtin.file: { path: "{{ artifact_dir }}", state: directory, mode: "0755" }
+      become: true
+
+    - name: "打包 bidder-{{ build_version }}.tar.gz 并计算 SHA256（同一版本已存在就跳过）"
+      ansible.builtin.shell: |
+        set -euo pipefail
+        stage=$(mktemp -d)
+        cp -r {{ repo_dir }}/build/bidder/. "$stage/"
+        echo "{{ build_version }}" > "$stage/VERSION"
+        tar -C "$stage" -czf bidder-{{ build_version }}.tar.gz .
+        sha256sum bidder-{{ build_version }}.tar.gz > bidder-{{ build_version }}.tar.gz.sha256
+        rm -rf "$stage"
+      args:
+        chdir: "{{ artifact_dir }}"
+        executable: /bin/bash
+        creates: "{{ artifact_dir }}/bidder-{{ build_version }}.tar.gz"
+      become: true
+
+    - name: 记录最新构建的版本
+      ansible.builtin.copy:
+        content: "{{ build_version }}\n"
+        dest: "{{ artifact_dir }}/LATEST"
+        mode: "0644"
+      become: true
+
+    - name: 结果
+      ansible.builtin.debug:
+        msg: "制品：{{ artifact_dir }}/bidder-{{ build_version }}.tar.gz。发布：ansible-playbook deploy.yml"

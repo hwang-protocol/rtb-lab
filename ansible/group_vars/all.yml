@@ -16,3 +16,10 @@ alloy_version: 1.20.1
 
 # Grafana 管理员密码：只保存在目标机器上这个文件里（首次随机生成），不进仓库
 grafana_password_file: "/home/{{ ansible_user }}/.config/rtb-lab/grafana-admin-password"
+
+# ---------- 竞价服务的版本化发布（build.yml / deploy.yml / rollback.yml）----------
+bidder_home: /opt/rtb-bidder                 # releases/<版本>/、current → 当前版本、HISTORY
+artifact_dir: /var/lib/rtb-lab/artifacts     # 制品目录；上 EC2 后换成 S3
+releases_keep: 5                             # 机器上最多保留几个版本
+# 版本号 = 当前 git 提交号（在 Mac 上计算）
+git_version: "{{ lookup('ansible.builtin.pipe', 'git -C ' ~ (repo_root | quote) ~ ' rev-parse --short=10 HEAD') }}"

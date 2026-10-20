@@ -1,0 +1,37 @@
+# 切换到某个版本并确认它健康。参数：release（版本号）
+# deploy.yml 和 rollback.yml 共用；任何一步失败，调用方决定怎么处理。
+- name: "切换 current → releases/{{ release }}"
+  ansible.builtin.file:
+    src: "{{ bidder_home }}/releases/{{ release }}"
+    dest: "{{ bidder_home }}/current"
+    state: link
+    force: true
+
+- name: 重启竞价服务（符号链接只在启动时解析，必须重启）
+  ansible.builtin.systemd: { name: rtb-bidder, state: restarted, daemon_reload: true }
+
+- name: "健康检查：/health 返回的版本必须是 {{ release }}"
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8080/health
+    return_content: true
+  register: health
+  until: health.status == 200 and ('ok ' ~ release) in health.content
+  retries: "{{ health_retries | default(20) }}"
+  delay: 1
+
+- name: 冒烟测试：发一个真实的竞价请求，必须返回 200（出价）或 204（不出价）
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8080/bid
+    method: POST
+    body_format: json
+    body:
+      id: deploy-smoke
+      imp: [{ id: "1", bidfloor: 0.5, banner: { w: 300, h: 250 } }]
+      site: { domain: smoke.example, cat: [IAB12] }
+      device: { geo: { country: USA } }
+      user: { id: u-smoke }
+      tmax: 50
+    status_code: [200, 204]
+
+- name: 记录发布历史（只有健康检查和冒烟测试都通过才记录）
+  ansible.builtin.shell: "echo \"$(date -Is) {{ release }}\" >> {{ bidder_home }}/HISTORY"
