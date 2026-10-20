@@ -60,17 +60,39 @@ panels_spec = [
     ("频次计数表条目数（无过期清理，会一直增长）", "short", False, [
         ("bidder_freq_entries", "条目数"),
     ]),
+    ("row", "④ 日志（Loki：journald + GC 日志，由 Alloy 采集）"),
+    ("每个服务的日志量（条/分钟）", "short", True, [
+        ('sum by (unit)(count_over_time({job="systemd-journal"}[1m]))', "{{unit}}"),
+    ], "loki"),
+    ("警告及以上级别的日志（条/分钟）", "short", True, [
+        ('sum by (unit, level)(count_over_time({job="systemd-journal", level=~"emerg|alert|crit|err|warning"}[1m]))',
+         "{{unit}} {{level}}"),
+    ], "loki"),
+    ("logs", "竞价服务 + 告警接收器日志", '{unit=~"rtb-bidder.service|alert-receiver.service"}'),
+    ("logs", "JVM GC 日志", '{job="rtb-bidder-gc"}'),
 ]
 
+# 没有数据时显示的说明文字（代替 Grafana 默认的 "No data"），按标题开头匹配
+NO_VALUE = {
+    "正在触发的告警": "✅ 没有告警",
+    "即将触发的告警": "✅ 没有告警",
+    "客户端延迟": "压测程序未运行（运行 loadgen/run-scenario.sh 后出现）",
+    "服务端处理耗时": "当前没有请求",
+}
 
-def timeseries(pid, title, unit, stacked, targets, x, y):
+DS = {"prometheus": {"type": "prometheus", "uid": "prometheus"},
+      "loki": {"type": "loki", "uid": "loki"}}
+
+
+def timeseries(pid, title, unit, stacked, targets, x, y, ds="prometheus"):
     return {
         "id": pid, "type": "timeseries", "title": title,
-        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "datasource": DS[ds],
         "gridPos": {"h": 8, "w": 12, "x": x, "y": y},
         "fieldConfig": {
             "defaults": {
                 "unit": unit,
+                "noValue": next((v for k, v in NO_VALUE.items() if title.startswith(k)), "No data"),
                 "custom": {
                     "lineWidth": 2, "fillOpacity": 25 if stacked else 8, "showPoints": "never",
                     "stacking": {"mode": "normal" if stacked else "none", "group": "A"},
@@ -83,10 +105,19 @@ def timeseries(pid, title, unit, stacked, targets, x, y):
             "tooltip": {"mode": "multi", "sort": "desc"},
         },
         "targets": [
-            {"refId": chr(65 + i), "expr": expr, "legendFormat": legend,
-             "datasource": {"type": "prometheus", "uid": "prometheus"}}
+            {"refId": chr(65 + i), "expr": expr, "legendFormat": legend, "datasource": DS[ds]}
             for i, (expr, legend) in enumerate(targets)
         ],
+    }
+
+
+def logs(pid, title, expr, y):  # 日志面板：占满一整行
+    return {
+        "id": pid, "type": "logs", "title": title, "datasource": DS["loki"],
+        "gridPos": {"h": 10, "w": 24, "x": 0, "y": y},
+        "options": {"showTime": True, "wrapLogMessage": True, "sortOrder": "Descending",
+                    "enableLogDetails": True, "dedupStrategy": "none"},
+        "targets": [{"refId": "A", "expr": expr, "queryType": "range", "datasource": DS["loki"]}],
     }
 
 
@@ -102,8 +133,15 @@ def build():
             pid += 1
             y += 1
             continue
-        title, unit, stacked, targets = spec
-        panels.append(timeseries(pid, title, unit, stacked, targets, col * 12, y))
+        if spec[0] == "logs":
+            if col:
+                y += 8
+                col = 0
+            panels.append(logs(pid, spec[1], spec[2], y))
+            pid += 1
+            y += 10
+            continue
+        panels.append(timeseries(pid, *spec[:4], col * 12, y, *spec[4:]))
         pid += 1
         col += 1
         if col == 2:

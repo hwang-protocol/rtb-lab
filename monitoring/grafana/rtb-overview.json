@@ -44,6 +44,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
+          "noValue": "✅ 没有告警",
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 25,
@@ -100,6 +101,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
+          "noValue": "✅ 没有告警",
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 25,
@@ -169,6 +171,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "ms",
+          "noValue": "压测程序未运行（运行 loadgen/run-scenario.sh 后出现）",
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 8,
@@ -243,6 +246,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "ms",
+          "noValue": "当前没有请求",
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 8,
@@ -317,6 +321,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "reqps",
+          "noValue": "No data",
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 8,
@@ -400,6 +405,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "reqps",
+          "noValue": "No data",
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 8,
@@ -478,6 +484,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "percent",
+          "noValue": "No data",
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 25,
@@ -534,6 +541,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
+          "noValue": "No data",
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 8,
@@ -608,6 +616,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
+          "noValue": "No data",
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 8,
@@ -691,6 +700,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
+          "noValue": "No data",
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 8,
@@ -760,6 +770,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "bytes",
+          "noValue": "No data",
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 8,
@@ -816,6 +827,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
+          "noValue": "No data",
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 8,
@@ -851,6 +863,199 @@
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "row",
+      "title": "④ 日志（Loki：journald + GC 日志，由 Alloy 采集）",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 52
+      },
+      "panels": []
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "每个服务的日志量（条/分钟）",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 53
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 25,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (unit)(count_over_time({job=\"systemd-journal\"}[1m]))",
+          "legendFormat": "{{unit}}",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "警告及以上级别的日志（条/分钟）",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 53
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 25,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (unit, level)(count_over_time({job=\"systemd-journal\", level=~\"emerg|alert|crit|err|warning\"}[1m]))",
+          "legendFormat": "{{unit}} {{level}}",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "logs",
+      "title": "竞价服务 + 告警接收器日志",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 61
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true,
+        "dedupStrategy": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{unit=~\"rtb-bidder.service|alert-receiver.service\"}",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "logs",
+      "title": "JVM GC 日志",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 71
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true,
+        "dedupStrategy": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{job=\"rtb-bidder-gc\"}",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
           }
         }
       ]
