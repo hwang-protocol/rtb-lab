@@ -1,0 +1,46 @@
+- name: 安装 Alertmanager 和 amtool
+  ansible.builtin.include_role:
+    name: prom_binary
+  vars:
+    pb_name: alertmanager
+    pb_version: "{{ alertmanager_version }}"
+    pb_bins: [alertmanager, amtool]
+    pb_service: alertmanager
+
+- name: 创建服务专用用户（Alertmanager、本地告警接收器）
+  ansible.builtin.user: { name: "{{ item }}", system: true, create_home: false, shell: /sbin/nologin }
+  loop: [alertmanager, alertrx]
+
+- name: 创建配置和数据目录
+  ansible.builtin.file: { path: "{{ item.path }}", state: directory, owner: "{{ item.owner }}", group: "{{ item.owner }}", mode: "0755" }
+  loop:
+    - { path: /etc/alertmanager, owner: root }
+    - { path: /var/lib/alertmanager, owner: alertmanager }
+    - { path: /opt/alert-receiver, owner: root }
+
+- name: 安装配置（先用 amtool 检查语法，不通过就不替换）
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/monitoring/alertmanager.yml"
+    dest: /etc/alertmanager/alertmanager.yml
+    mode: "0644"
+    validate: /usr/local/bin/amtool check-config %s
+  notify: restart alertmanager
+
+- name: 安装本地告警接收器
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/monitoring/alert-receiver/receiver.py"
+    dest: /opt/alert-receiver/receiver.py
+    mode: "0644"
+  notify: restart alert-receiver
+
+- name: 安装 systemd 服务文件
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/monitoring/systemd/{{ item }}.service"
+    dest: "/etc/systemd/system/{{ item }}.service"
+    mode: "0644"
+  loop: [alertmanager, alert-receiver]
+  notify: "restart {{ item }}"
+
+- name: 开机自启并启动
+  ansible.builtin.systemd: { name: "{{ item }}", enabled: true, state: started, daemon_reload: true }
+  loop: [alert-receiver, alertmanager]

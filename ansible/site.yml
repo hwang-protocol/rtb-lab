@@ -16,3 +16,11 @@
   become: true
   roles:
     - { role: bidder, tags: [bidder] }
+
+- name: 监控、告警、日志
+  hosts: monitoring
+  become: true
+  roles:
+    - { role: node_exporter, tags: [monitoring, node_exporter] }
+    - { role: alertmanager, tags: [monitoring, alertmanager] }
+    - { role: prometheus, tags: [monitoring, prometheus] }

@@ -1,0 +1,29 @@
+- name: 安装 node_exporter
+  ansible.builtin.include_role:
+    name: prom_binary
+  vars:
+    pb_name: node_exporter
+    pb_version: "{{ node_exporter_version }}"
+    pb_bins: [node_exporter]
+    pb_service: node_exporter
+
+- name: 创建服务专用用户
+  ansible.builtin.user: { name: node_exporter, system: true, create_home: false, shell: /sbin/nologin }
+
+- name: textfile 目录：压测程序（登录用户）写入 loadgen.prom，node_exporter 读取
+  ansible.builtin.file:
+    path: /var/lib/node_exporter/textfile
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: node_exporter
+    mode: "0755"
+
+- name: 安装 systemd 服务文件
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/monitoring/systemd/node_exporter.service"
+    dest: /etc/systemd/system/node_exporter.service
+    mode: "0644"
+  notify: restart node_exporter
+
+- name: 开机自启并启动
+  ansible.builtin.systemd: { name: node_exporter, enabled: true, state: started, daemon_reload: true }

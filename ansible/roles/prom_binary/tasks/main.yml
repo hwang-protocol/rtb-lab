@@ -1,0 +1,39 @@
+# 通用：从 GitHub 下载 Prometheus 官方项目的二进制包，校验 SHA256，安装到 /usr/local/bin
+# 参数：pb_name（项目名）、pb_version、pb_bins（要安装的可执行文件）、pb_service（更新后要重启的服务）
+- name: "{{ pb_name }}：下载缓存目录"
+  ansible.builtin.file:
+    path: /var/cache/rtb-lab
+    state: directory
+    mode: "0755"
+
+- name: "{{ pb_name }} {{ pb_version }}：下载并校验 SHA256"
+  ansible.builtin.get_url:
+    url: "{{ pb_url }}/{{ pb_tgz }}"
+    dest: "/var/cache/rtb-lab/{{ pb_tgz }}"
+    checksum: "sha256:{{ pb_url }}/sha256sums.txt"
+    mode: "0644"
+  vars: &pb_vars
+    pb_tgz: "{{ pb_name }}-{{ pb_version }}.linux-{{ prom_arch }}.tar.gz"
+    pb_url: "https://github.com/prometheus/{{ pb_name }}/releases/download/v{{ pb_version }}"
+
+- name: "{{ pb_name }}：解压"
+  ansible.builtin.unarchive:
+    src: "/var/cache/rtb-lab/{{ pb_tgz }}"
+    dest: /var/cache/rtb-lab/
+    remote_src: true
+    creates: "/var/cache/rtb-lab/{{ pb_name }}-{{ pb_version }}.linux-{{ prom_arch }}"
+  vars: *pb_vars
+
+- name: "{{ pb_name }}：安装可执行文件"
+  ansible.builtin.copy:
+    src: "/var/cache/rtb-lab/{{ pb_name }}-{{ pb_version }}.linux-{{ prom_arch }}/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    remote_src: true
+    mode: "0755"
+  loop: "{{ pb_bins }}"
+  notify: "restart {{ pb_service }}"
+
+- name: "{{ pb_name }}：恢复 SELinux 默认标签（从缓存目录复制过来的文件可能带着错误的标签）"
+  ansible.builtin.command: "restorecon -v {{ pb_bins | map('regex_replace', '^', '/usr/local/bin/') | join(' ') }}"
+  register: pb_restorecon
+  changed_when: pb_restorecon.stdout | length > 0

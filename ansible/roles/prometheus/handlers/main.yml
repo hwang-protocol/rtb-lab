@@ -1,0 +1,6 @@
+- name: restart prometheus
+  ansible.builtin.systemd: { name: prometheus, state: restarted, daemon_reload: true }
+
+# 只改了配置或规则时不必重启：发 SIGHUP 让 Prometheus 重新读取配置，抓取数据不中断
+- name: reload prometheus
+  ansible.builtin.systemd: { name: prometheus, state: reloaded }
