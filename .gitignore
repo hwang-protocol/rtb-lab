@@ -4,3 +4,11 @@ results/*.tmp
 
 # Ansible 扩展（由 ansible/requirements.yml 安装，不进仓库）
 ansible/collections/
+
+# Terraform：state 里可能有敏感信息，本地缓存的 provider 很大，都不进仓库
+terraform/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+crash.log
+terraform/tfplan
