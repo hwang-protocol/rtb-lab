@@ -70,16 +70,18 @@
 - [x] 日常使用的 IAM 用户 `hongzheng`（控制台密码 + MFA，0 个 Access Key）；CLI：`aws login --profile rtb-lab`，临时凭证
   - 没有用 IAM Identity Center：开启它会自动创建 Organization，账号会升级为付费、免费额度立刻作废（2026-10-20 在控制台确认）
 - [x] Mac 上安装 AWS CLI 2.38.0（Amazon 签名已校验）、Terraform 1.16.5（SHA256 已校验），都在 `~/.local/bin`；没有长期凭证
-- [ ] `.gitignore` 加上 `*.tfstate`、`*.tfstate.*`、`.terraform/`、`*.tfvars`
+- [x] `.gitignore` 加上 `*.tfstate`、`*.tfstate.*`、`.terraform/`、`*.tfvars`、`tfplan`；`.terraform.lock.hcl` 进仓库
 
 ### 2.1 网络和机器（Terraform，保持简单）
 
-- [ ] VPC + 1 个可用区：公有子网（NLB、NAT 实例）+ 私有子网（出价机器、压测机器、监控机器）
+- [x] VPC 10.20.0.0/16 + 1 个可用区（us-east-1a）：公有子网 + 私有子网；默认安全组清空（2026-10-20 已创建，Terraform 1.16.5 / AWS provider 6.67.0）
 - [ ] **不开 SSH 端口**：所有登录走 SSM Session Manager
-- [ ] Security Group：出价端口只允许 NLB / 压测机访问
+- [x] Security Group：按安全组互相放行（8080、9100、3100），没有任何 SSH 规则；NLB 的规则等加 NLB 时再加
 - [ ] EC2：出价 c7g.large、压测 c7g.large、监控 t4g.small（全部 ARM）
-- [ ] 每台机器一个 **IAM 实例角色**，最小权限（只能读指定的 S3 路径和参数）
-- [ ] 所有资源打标签 `project=rtb-lab`
+- [x] 每类机器一个 **IAM 实例角色**，最小权限；用 IAM 策略模拟器验证
+  - 发现：`AmazonSSMManagedInstanceCore` 允许读**任何**参数 → 加显式 Deny，各角色不能读其他角色的 `/rtb-lab/<角色>/` 参数
+- [x] S3 制品桶：禁止公开访问、加密、版本控制、只允许 HTTPS、旧版本 30 天删除
+- [x] 所有资源打标签 `project=rtb-lab`（provider 的 default_tags）
 
 ### 2.2 按岗位的方式部署
 
