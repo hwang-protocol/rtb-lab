@@ -29,7 +29,7 @@ journalctl -u rtb-bidder -f
 curl -s localhost:8080/metrics
 ```
 
-## 监控与告警（Prometheus + Grafana + Alertmanager）
+## 监控、告警与日志（Prometheus + Alertmanager + Loki + Grafana）
 
 ```
 rocky9 虚拟机（全部只监听 127.0.0.1，systemd 管理，各自专用系统用户）
@@ -39,7 +39,9 @@ rocky9 虚拟机（全部只监听 127.0.0.1，systemd 管理，各自专用系�
  ├── Prometheus      :9090          每 5 秒抓取，保留 7 天；按 monitoring/alerts/ 里的规则计算告警
  ├── Alertmanager    :9093          告警分组、去重、抑制、路由
  ├── alert-receiver  :9095          本地告警接收器：把通知写进 journald（实验环境代替 Slack / 邮件）
- └── Grafana         :3000          大盘 "RTB Lab 总览"（自动导入，顶部一排显示告警）
+ ├── Alloy           :12345         日志采集：journald（所有 systemd 服务）+ JVM GC 日志 → Loki
+ ├── Loki            :3100          日志存储，只给标签（unit / level / job）建索引，保留 7 天
+ └── Grafana         :3000          大盘 "RTB Lab 总览"（自动导入）：告警、指标，最下面一排是日志
 ```
 
 ```bash
@@ -49,7 +51,11 @@ open http://localhost:3000             # Grafana：用户 admin，密码见虚�
 open http://localhost:9090/alerts      # Prometheus：告警规则及其状态（inactive / pending / firing）
 open http://localhost:9093             # Alertmanager：当前告警、静默（silence）
 ssh rocky9 'bash ~/rtb-lab/monitoring/verify-alerting.sh'   # 端到端验证告警链路（约 7 分钟）
-ssh rocky9 'journalctl -u alert-receiver -f'               # 实时看告警通知
+ssh rocky9 'journalctl -u alert-receiver -f'               # 实时看告警通知（机器本地的日志）
+# 集中日志：Grafana → Explore → 数据源选 Loki，例如：
+#   {unit="rtb-bidder.service"}                        竞价服务的日志
+#   {job="systemd-journal", level=~"err|crit"}         所有服务的错误
+#   {job="rtb-bidder-gc"} |= "Pause"                   GC 停顿
 ssh rocky9 'bash ~/rtb-lab/loadgen/run-scenario.sh'        # 约 5 分钟演示流量，含一次故障重现
 ssh rocky9 'bash ~/rtb-lab/loadgen/run-scenario.sh fault'  # 只跑 2 分钟故障，用来测试告警
 ```
@@ -83,6 +89,6 @@ BidderFreqTableGrowing、TcpTimeWaitHigh、NodeCpuHigh、NodeMemoryLow、NodeDis
 - [x] Prometheus + Grafana 监控
 - [x] Alertmanager 告警（本地 webhook 接收器）
 - [ ] 告警接入真实通知渠道（Slack / 邮件）
-- [ ] 日志集中收集（Loki）
+- [x] 日志集中收集（Loki + Alloy）
 - [ ] 故障注入：fd 上限、内存泄漏与 OOM、网卡软中断、吵闹邻居、磁盘写满、DNS 慢
 - [ ] Terraform + Ansible 部署到 EC2

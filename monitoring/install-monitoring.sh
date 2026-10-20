@@ -1,12 +1,14 @@
 #!/bin/bash
 # 在虚拟机上运行（由 monitoring/deploy-monitoring.sh 从 Mac 远程调用）：
-# 安装 Prometheus + node_exporter + Grafana，全部作为 systemd 服务，只监听 127.0.0.1。
+# 安装 Prometheus + Alertmanager + node_exporter + Grafana + Loki + Alloy，全部作为 systemd 服务，只监听 127.0.0.1。
 set -euo pipefail
 cd "$(dirname "$0")"
 
 PROM_VER=3.15.0
 NODE_VER=1.12.1
 AM_VER=0.34.1
+LOKI_VER=3.7.8              # Loki 和 Alloy 用 dnf 从 Grafana 软件源安装（GPG 校验）
+ALLOY_VER=1.20.1
 ARCH=linux-arm64            # Apple 芯片虚拟机是 ARM；在 x86 的 EC2 上改成 linux-amd64
 # Grafana 管理员密码：不写在代码里。优先用环境变量；否则读取 / 首次随机生成，保存在只有本人可读的文件中
 PW_FILE="$HOME/.config/rtb-lab/grafana-admin-password"
@@ -115,16 +117,33 @@ sudo mkdir -p /var/lib/grafana/dashboards
 sudo cp grafana/rtb-overview.json /var/lib/grafana/dashboards/
 sudo chown -R grafana:grafana /var/lib/grafana/dashboards
 
+# ---------- Loki（日志存储）+ Alloy（日志采集），同样来自 Grafana 官方软件源 ----------
+# Alloy 是 Promtail 的继任者（Promtail 已停止维护）
+rpm -q "loki-$LOKI_VER" >/dev/null 2>&1 || sudo dnf install -y -q "loki-$LOKI_VER"
+rpm -q "alloy-$ALLOY_VER" >/dev/null 2>&1 || sudo dnf install -y -q "alloy-$ALLOY_VER"
+sudo mkdir -p /var/lib/loki
+sudo chown loki:loki /var/lib/loki
+sudo cp loki/loki.yml /etc/loki/config.yml
+echo "==> 检查 Loki 配置语法"
+/usr/bin/loki -config.file=/etc/loki/config.yml -verify-config 2>&1 | tail -1
+sudo cp alloy/config.alloy /etc/alloy/config.alloy
+# Alloy 的界面和 /metrics 只监听本机；关闭匿名统计上报
+sudo sed -i 's|^CUSTOM_ARGS=.*|CUSTOM_ARGS="--server.http.listen-addr=127.0.0.1:12345 --disable-reporting"|' /etc/sysconfig/alloy
+# Alloy 用户要能读 journald：RPM 已经把它加进 systemd-journal 组，这里再确认一次
+sudo usermod -aG systemd-journal alloy
+echo "==> 检查 Alloy 配置语法"
+sudo -u alloy /usr/bin/alloy fmt /etc/alloy/config.alloy >/dev/null && echo "  SUCCESS: /etc/alloy/config.alloy"
+
 # ---------- 启动 ----------
 sudo systemctl daemon-reload
-SERVICES="node_exporter alert-receiver alertmanager prometheus grafana-server"
+SERVICES="node_exporter alert-receiver alertmanager prometheus loki alloy grafana-server"
 sudo systemctl enable --now $SERVICES
 sudo systemctl restart $SERVICES
 
 echo "==> 等待服务就绪"
 for i in $(seq 1 60); do
   curl -sf http://127.0.0.1:9090/-/ready >/dev/null && curl -sf http://127.0.0.1:9093/-/ready >/dev/null \
-    && curl -sf http://127.0.0.1:3000/api/health >/dev/null && break
+    && curl -sf http://127.0.0.1:3000/api/health >/dev/null && curl -sf http://127.0.0.1:3100/ready >/dev/null && break
   sleep 1
 done
 for s in $SERVICES; do printf "  %-16s %s\n" "$s" "$(systemctl is-active "$s")"; done

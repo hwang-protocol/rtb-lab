@@ -9,3 +9,9 @@ datasources:
     isDefault: true
     jsonData:
       timeInterval: 5s
+  # 日志：Loki（由 Alloy 采集 journald 和 GC 日志）
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://127.0.0.1:3100

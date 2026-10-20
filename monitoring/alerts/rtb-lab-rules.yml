@@ -98,10 +98,10 @@ groups:
           hint: "df -h；du -xh / --max-depth=2 | sort -h | tail；lsof | grep deleted"
 
       - alert: ExporterDown
-        expr: up{job=~"node|prometheus"} == 0
+        expr: up{job=~"node|prometheus|alertmanager|loki|alloy"} == 0
         for: 30s
         labels:
           severity: critical
         annotations:
           summary: "监控组件 {{ $labels.job }} 无法抓取"
-          hint: "systemctl status node_exporter prometheus"
+          hint: "systemctl status node_exporter prometheus alertmanager loki alloy；journalctl -u <对应服务> -n 50"

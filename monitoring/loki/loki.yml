@@ -1,0 +1,51 @@
+# Loki 单机配置（安装到 /etc/loki/config.yml）
+# 和 RPM 自带的默认配置相比：数据放 /var/lib/loki 而不是 /tmp；只监听 127.0.0.1；
+# 日志级别 info；保留 7 天；关闭匿名统计上报。
+auth_enabled: false            # 单租户，不需要认证（只对本机开放）
+
+server:
+  http_listen_address: 127.0.0.1
+  http_listen_port: 3100
+  grpc_listen_address: 127.0.0.1
+  grpc_listen_port: 9096
+  log_level: info
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /var/lib/loki
+  storage:
+    filesystem:                # 日志块直接存本地磁盘；生产环境一般换成 S3 等对象存储
+      chunks_directory: /var/lib/loki/chunks
+      rules_directory: /var/lib/loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2020-10-24
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  retention_period: 168h       # 保留 7 天（虚拟机磁盘只有 10G）
+
+compactor:                     # 压缩器负责按保留期删除旧日志
+  working_directory: /var/lib/loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem
+
+query_range:
+  results_cache:
+    cache:
+      embedded_cache:
+        enabled: true
+        max_size_mb: 100
+
+analytics:
+  reporting_enabled: false

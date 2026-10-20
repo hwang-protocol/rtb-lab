@@ -1,0 +1,51 @@
+// Grafana Alloy 配置（安装到 /etc/alloy/config.alloy）
+// 作用：采集日志 → 推送到 Loki。数据流：
+//   journald（所有 systemd 服务的日志）──┐
+//   /var/log/rtb-bidder/gc.log（JVM GC）─┴─→ loki.write → Loki :3100
+
+// ---------- 1. journald ----------
+// journald 的每条日志带很多字段（__journal_ 开头），这里挑几个变成 Loki 标签。
+// 标签要少而固定：Loki 只给标签建索引，标签值太多（比如把请求 ID 当标签）会拖垮它。
+loki.relabel "journal" {
+  forward_to = []
+
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    target_label  = "unit"                       // 例如 rtb-bidder.service
+  }
+  rule {
+    // 每次 SSH 登录都会产生一个新的 session-123.scope，当标签会无限增长 → 合并成一个值
+    source_labels = ["unit"]
+    regex         = "session-[0-9]+\\.scope"
+    target_label  = "unit"
+    replacement   = "session.scope"
+  }
+  rule {
+    source_labels = ["__journal_priority_keyword"]
+    target_label  = "level"                      // emerg / alert / crit / err / warning / notice / info / debug
+  }
+}
+
+loki.source.journal "system" {
+  max_age       = "12h"                          // 首次启动时最多补读 12 小时前的日志
+  relabel_rules = loki.relabel.journal.rules
+  labels        = { job = "systemd-journal" }
+  forward_to    = [loki.write.local.receiver]
+}
+
+// ---------- 2. JVM GC 日志（普通文件）----------
+local.file_match "gc" {
+  path_targets = [{ "__path__" = "/var/log/rtb-bidder/gc.log", job = "rtb-bidder-gc" }]
+}
+
+loki.source.file "gc" {
+  targets    = local.file_match.gc.targets
+  forward_to = [loki.write.local.receiver]
+}
+
+// ---------- 3. 推送到 Loki ----------
+loki.write "local" {
+  endpoint {
+    url = "http://127.0.0.1:3100/loki/api/v1/push"
+  }
+}
