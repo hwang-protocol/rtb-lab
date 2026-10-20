@@ -5,21 +5,26 @@
 
 状态说明：✅ 完成 · 🟡 进行中 · ⬜ 未开始 · 💤 以后再说
 
+**目标岗位**：小型量化交易公司的 Senior Infrastructure / Systems Engineer。他们的环境是约 5 台 EC2 + S3 + SSM + Ansible + Linux，不用 Kubernetes，强调简单、可靠、可重现、安全。下面的顺序按这个岗位的要求排列。
+
 ---
 
 ## 当前状态一览
 
-| 阶段 | 内容 | 状态 |
-|---|---|---|
-| 0 | 基础：虚拟机、竞价服务、压测、监控、告警、日志 | ✅ |
-| 1 | 故障实验（OOM、fd、磁盘） | ⬜ |
-| 2 | Ansible：把部署脚本改成 playbook（在 UTM 虚拟机上练，免费） | ✅（旧 bash 脚本待删除） |
-| 3 | Terraform：部署到真实的 AWS EC2 | ⬜ |
-| 4 | 进阶：Redis、Docker 对比、绑核、Slack 告警 | 💤 |
+| 阶段 | 内容 | 对应岗位要求 | 状态 |
+|---|---|---|---|
+| A | 基础：虚拟机、竞价服务、压测、监控、告警、日志 | 监控、日志、故障分析 | ✅ |
+| B | Ansible：部署脚本改成 playbook | Ansible 配置管理 | ✅ |
+| 1 | 版本化部署 + 自动回滚（虚拟机） | 部署和回滚流程 | ✅ |
+| 2 | EC2 + IAM 角色 + SSM + S3 + Parameter Store | EC2 / VPC / IAM / S3 / SSM、凭证管理 | ⬜ 等 AWS 账号准备 |
+| 3 | 故障实验：OOM、fd、丢包 | 跨应用 / 系统 / 网络排查 | ⬜ |
+| 4 | 调优：绑核、IRQ、ENA 网卡计数器、TCP 参数、NUMA | Linux 性能调优（加分项） | ⬜ |
+| 5 | 交易所行情连接 + 多区域延迟对比 + 时间同步 | 交易所连接、多区域（加分项） | ⬜ |
+| 6 | 备份恢复演练、runbook、成本报告 | 备份恢复、事故响应、成本优化 | ⬜ |
 
 ---
 
-## 阶段 0：基础（已基本完成）
+## 阶段 A：基础 ✅
 
 - [x] UTM 虚拟机 Rocky 9（4 核 4 GB），SSH 免密登录 `ssh rocky9`（2026-10-19）
 - [x] 竞价服务 Bidder（Java 21，systemd 管理）+ 开环压测程序 LoadGen（`55b9347`）
@@ -27,90 +32,105 @@
 - [x] Prometheus + node_exporter + Grafana 大盘（`39aecb5`）
 - [x] Alertmanager + 10 条告警规则 + 本地告警接收器（`920d97e`）
 - [x] 验证记录 #02：告警触发 / 恢复 / 静默 / 抑制全部验证通过（`920d97e`）
-- [x] 修复：部署脚本误删 `build/`、压测失败被吞掉（`920d97e`）
-- [x] 发布到 GitHub：github.com/hwang-protocol/rtb-lab（公开）
 - [x] Loki + Alloy 集中日志（`ea12659`）；大盘日志面板和无数据说明文字（`76ac64f`）
 - [x] 讨论稿 `docs/why-chain-oom-and-fd.md`（`7c6032f`）
+- [x] 发布到 GitHub：github.com/hwang-protocol/rtb-lab（公开）
 - [x] 流程图网页（私有链接，需要时在 Share 菜单里分享）：https://claude.ai/artifact/99pYCpwdwiuVeftBjr9jsq
 
----
+## 阶段 B：Ansible ✅
 
-## 阶段 1：故障实验（免费，在 UTM 虚拟机上做）
-
-每个实验都要写一份排查记录（`results/`，格式同 #01）：现象 → 定位 → 根因 → 修复 → 前后数据对比。
-
-- [ ] **#03 内存泄漏 → OOM**（书第 13 章 cgroup 内存）
-  - [ ] 实验 A：只有 `-Xmx`，观察 `OutOfMemoryError` 和"进程假活着"
-  - [ ] 实验 B：加 `MemoryMax` 且故意小于实际需要，观察内核 OOM killer、`memory.events`、systemd `oom-kill`
-  - [ ] 修复：频次表加过期；`-XX:+ExitOnOutOfMemoryError`；合理的 `MemoryMax`；堆使用率告警
-- [ ] **#04 fd 耗尽**
-  - [ ] 实验 A：`LimitNOFILE=256`，看"上限太低"的曲线
-  - [ ] 实验 B：加一个故障开关制造 fd 泄漏，看"一直涨不回落"的曲线
-  - [ ] 加指标和告警：进程 fd 使用率 > 80%
-- [ ] **#05 磁盘写满 + LVM 在线扩容**（磁盘目前只有 10G，正好练）
-  - [ ] `du` / `lsof | grep deleted` 定位；logrotate；`lvextend` + `xfs_growfs`
+- [x] ansible-core 2.21.4 + ansible.posix 2.2.2（uv + Python 3.12，不依赖 Homebrew）
+- [x] 角色：`base`、`rtb_code`、`bidder`、`prom_binary`、`node_exporter`、`alertmanager`、`prometheus`、`loki`、`alloy`、`grafana`
+- [x] 配置先检查再替换（`validate`）；Prometheus 改规则只 reload
+- [x] 幂等：第二次运行 `changed=0`；`verify-alerting.sh` 全部通过（`6906f13`、`eb5af31`、`09ba2ae`）
 
 ---
 
-## 阶段 2：Ansible（免费，先在 UTM 虚拟机上练）
+## 阶段 1：版本化部署 + 自动回滚（虚拟机，免费）✅
 
-目标：用 playbook 替换 `deploy/deploy.sh` 和 `monitoring/install-monitoring.sh`，同一份 playbook 以后直接用在 EC2 上。
-
-- [x] Mac 上安装 Ansible：uv + Python 3.12 + ansible-core 2.21.4，扩展 ansible.posix 2.2.2（2026-10-20）
-- [x] 清单文件 `ansible/inventory/hosts.yml`：先只有 rocky9 一台，按 bidder / loadgen / monitoring 分组
-- [x] 角色拆分：`base`、`rtb_code`、`bidder`、`prom_binary`（通用下载）、`node_exporter`、`alertmanager`、`prometheus`、`loki`、`alloy`、`grafana`
-- [x] 版本号统一放在 `group_vars/all.yml`；CPU 架构自动识别（arm64 / amd64），上 EC2 不用改
-- [x] 配置先检查再替换（`validate`）；Prometheus 改规则只 reload 不重启（服务文件加了 `ExecReload`）
-- [x] 验证幂等：第一次 `changed=18`（从 bash 版迁移），第二次 `changed=0`；修了 rsync 目录时间导致的假变化
-- [x] 重跑 `verify-alerting.sh`：触发 / 恢复 / 静默 / 抑制全部通过，和 bash 版结果一致
-- [x] 提交（`6906f13`、`eb5af31`、`09ba2ae`），2026-10-20 已推送
-- [ ] 旧的 bash 脚本保留一段时间，确认没问题后删除
+- [x] 竞价服务报告版本：`/health` 返回 `ok <版本>`；指标 `bidder_build_info{version=...}`（`a3a9e5d`）
+- [x] `build.yml`：按 git 提交号打包 + SHA256；有未提交的改动拒绝构建（`-e allow_dirty=true` 强制）（`93b5e71`）
+- [x] 目录结构 `releases/<版本>/` + `current` 符号链接 + `HISTORY`；只保留最近 5 个版本
+- [x] `deploy.yml`：校验 SHA256 → 切换 → 重启 → 版本号健康检查 + 冒烟测试；失败自动回滚；已是该版本则跳过；`serial: 1`
+- [x] `rollback.yml`：回到上一个成功发布过的版本，或 `-e version=`
+- [x] 演练记录 #03：坏版本自动回滚；加"发现反复崩溃立刻失败"后，中断 28 秒 → 3 秒，失败请求减少 89%
+- [x] 正常切换版本的代价：单机每次约 0.15 秒中断；零中断要等阶段 2 的多台机器 + NLB
+- [x] 删除旧的 bash 部署脚本，README 改成 Ansible 命令
+- [ ] 💤 切换前预热 JVM，看能否消除切换后 P99.9 约 200 ms 的冷启动尖峰
 
 ---
 
-## 阶段 3：Terraform + AWS EC2（花钱，每次用完必须销毁）
+## 阶段 2：EC2 + IAM 角色 + SSM + S3 + Parameter Store（花钱，每次用完必须销毁）
 
-### 3.0 开始之前（安全和费用，必须先做）
+### 2.0 开始之前（你在 AWS 控制台操作）
 
 - [ ] 使用**个人** AWS 账号（不要用工作账号；Mac 上 `~/.aws/sso` 里如果有工作的登录缓存，不要混用）
-- [ ] 根账号开启 MFA，日常操作用单独的 IAM 用户或 IAM Identity Center，不用根账号
+- [ ] 根账号开启 MFA
 - [ ] **AWS Budgets 预算告警：每月超过 10 美元发邮件**
+- [ ] IAM Identity Center 创建日常使用的用户，以后不用根账号操作
 - [ ] Mac 上安装 AWS CLI、Terraform；凭证只放在 `~/.aws/`，**绝不提交到仓库**
-- [ ] `.gitignore` 加上 `*.tfstate`、`*.tfstate.*`、`.terraform/`、`*.tfvars`（state 文件里可能有敏感信息）
+- [ ] `.gitignore` 加上 `*.tfstate`、`*.tfstate.*`、`.terraform/`、`*.tfvars`
 
-### 3.1 网络和机器
+### 2.1 网络和机器（Terraform，保持简单）
 
-- [ ] VPC + 1 个可用区：公有子网（NLB、NAT）+ 私有子网（出价机器、监控机器）
-- [ ] 出公网方式：先用 NAT 实例（t4g.nano，便宜）；对比 NAT Gateway 的费用
-- [ ] Security Group：出价端口只允许 NLB / 压测机访问；SSH 只允许你自己的 IP，或改用 SSM Session Manager
-- [ ] EC2：出价机器 c7g.large、压测机器 c7g.large、监控机器 t4g.small（全部 ARM，和虚拟机同架构）
-- [ ] NLB（四层）→ 出价机器 8080，健康检查走 `/health`
+- [ ] VPC + 1 个可用区：公有子网（NLB、NAT 实例）+ 私有子网（出价机器、压测机器、监控机器）
+- [ ] **不开 SSH 端口**：所有登录走 SSM Session Manager
+- [ ] Security Group：出价端口只允许 NLB / 压测机访问
+- [ ] EC2：出价 c7g.large、压测 c7g.large、监控 t4g.small（全部 ARM）
+- [ ] 每台机器一个 **IAM 实例角色**，最小权限（只能读指定的 S3 路径和参数）
 - [ ] 所有资源打标签 `project=rtb-lab`
 
-### 3.2 部署和验证
+### 2.2 按岗位的方式部署
 
-- [ ] Terraform 输出机器 IP → 生成 Ansible 清单 → 用阶段 2 的 playbook 部署
-- [ ] 压测机器和出价机器分开后，重跑 1000 / 3000 / 5000 rps，对比虚拟机上的数据
-- [ ] 在 EC2 上重跑 `verify-alerting.sh`
-- [ ] 写记录：虚拟机 vs EC2 的延迟对比、费用实际花了多少
+- [ ] Ansible 通过 SSM 连接机器（不走 SSH）
+- [ ] 制品上传 S3，`deploy.yml` 从 S3 下载并校验
+- [ ] Grafana 密码等密钥放 **SSM Parameter Store**（加密），机器用角色读取
+- [ ] 压测机器和出价机器分开后，重跑 1000 / 3000 / 5000 rps，和虚拟机对比
+- [ ] 重跑 `verify-alerting.sh`；写记录：虚拟机 vs EC2 延迟对比、实际花费
 
-### 3.3 每次用完
+### 2.3 每次用完
 
-- [ ] `terraform destroy`
-- [ ] `terraform state list` 为空；控制台检查 EC2、负载均衡、NAT、弹性 IP 都没有残留
+- [ ] `terraform destroy`；`terraform state list` 为空；控制台确认没有残留（EC2、负载均衡、NAT、弹性 IP）
 - [ ] 看一眼账单（按 `project=rtb-lab` 标签筛选）
 
 **费用预估**（us-east-1，以 AWS 官网为准）：实验期间约 $0.10–0.30/小时；每周 2–3 次、用完就删，每月约 $3–10；忘记删除开一个月约 $70–220。
 
 ---
 
-## 阶段 4：进阶（以后再说）
+## 阶段 3：故障实验
 
-- [ ] 💤 接入 Redis（频次 / 预算），练习连接池、超时、下游变慢的排查
-- [ ] 💤 Docker 对比实验：同一个竞价服务装进容器，对比延迟；在 `/sys/fs/cgroup` 里找到容器的 cgroup
-- [ ] 💤 绑核实验（和高频交易方向接轨）：`taskset` / `isolcpus`，看 P99.9 抖动变化
-- [ ] 💤 告警接入真实通知渠道（Slack / 邮件）
-- [ ] 💤 更多故障：网卡软中断、吵闹邻居、DNS 变慢
+每个实验都写一份排查记录（`results/`，格式同 #01）：现象 → 定位 → 根因 → 修复 → 前后数据对比。
+
+- [ ] **内存泄漏 → OOM**（书第 13 章）：`-Xmx` 先满 vs cgroup `MemoryMax` 先满；`ExitOnOutOfMemoryError`；堆使用率告警
+- [ ] **fd 耗尽**：`LimitNOFILE` 太低 vs fd 泄漏，两种曲线对比；fd 使用率告警
+- [ ] **丢包和网络延迟**：`tc netem` 注入延迟 / 丢包，用 `tcpdump`、`ss -ti`（重传）、大盘定位
+- [ ] 💤 磁盘写满 + LVM 在线扩容
+
+## 阶段 4：调优（在 EC2 上做，每项都对比 P99 / P99.9）
+
+- [ ] CPU 绑核（`CPUAffinity`、`taskset`）、`isolcpus`
+- [ ] 中断亲和性（IRQ affinity）、RPS / XPS
+- [ ] ENA 网卡计数器：`ethtool -S` 里的 `pps_allowance_exceeded` 等（EC2 按实例限制包速率，超了会悄悄丢包）
+- [ ] TCP 参数（`sysctl`：缓冲区、连接队列）
+- [ ] NUMA：在大实例上用 `numactl --hardware` 看结构（书第 2 章）
+
+## 阶段 5：交易所连接 + 多区域
+
+- [ ] 连接交易所**公开行情** WebSocket（不交易、不开账户）：消息延迟、断线次数、自动重连，接入 Prometheus
+- [ ] 2–3 个 AWS 区域各开一台小机器，对比到交易所的延迟
+- [ ] chrony + Amazon Time Sync Service，监控时钟偏差
+
+## 阶段 6：可靠性收尾
+
+- [ ] 备份恢复演练：删掉一台机器，用 Terraform + Ansible 从零重建，记录恢复时间
+- [ ] 每条告警写 runbook（现象、检查命令、处理步骤）
+- [ ] 成本报告：实际账单、优化了什么（Graviton、gp3、NAT 实例代替 NAT Gateway、用完销毁）
+
+## 以后再说 💤
+
+- [ ] 接入 Redis（频次 / 预算），练习连接池、超时、下游变慢
+- [ ] Docker 对比实验（知道为什么这个岗位不用它）
+- [ ] 告警接入 Slack / 邮件
 
 ---
 
