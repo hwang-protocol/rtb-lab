@@ -84,11 +84,4 @@ BidderFreqTableGrowing、TcpTimeWaitHigh、NodeCpuHigh、NodeMemoryLow、NodeDis
 
 ## 计划
 
-- [ ] 压测程序移到独立机器，消除同机抢 CPU 的干扰
-- [ ] 接入 Redis（预算 / 频次），练习连接池与网络排查
-- [x] Prometheus + Grafana 监控
-- [x] Alertmanager 告警（本地 webhook 接收器）
-- [ ] 告警接入真实通知渠道（Slack / 邮件）
-- [x] 日志集中收集（Loki + Alloy）
-- [ ] 故障注入：fd 上限、内存泄漏与 OOM、网卡软中断、吵闹邻居、磁盘写满、DNS 慢
-- [ ] Terraform + Ansible 部署到 EC2
+完整任务清单和进度见 [TASKS.md](TASKS.md)。
