@@ -11,9 +11,9 @@
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
-| 0 | 基础：虚拟机、竞价服务、压测、监控、告警、日志 | 🟡 日志部分还没提交 |
+| 0 | 基础：虚拟机、竞价服务、压测、监控、告警、日志 | ✅ |
 | 1 | 故障实验（OOM、fd、磁盘） | ⬜ |
-| 2 | Ansible：把部署脚本改成 playbook（在 UTM 虚拟机上练，免费） | 🟡 已跑通，未提交 |
+| 2 | Ansible：把部署脚本改成 playbook（在 UTM 虚拟机上练，免费） | ✅（旧 bash 脚本待删除） |
 | 3 | Terraform：部署到真实的 AWS EC2 | ⬜ |
 | 4 | 进阶：Redis、Docker 对比、绑核、Slack 告警 | 💤 |
 
@@ -29,11 +29,8 @@
 - [x] 验证记录 #02：告警触发 / 恢复 / 静默 / 抑制全部验证通过（`920d97e`）
 - [x] 修复：部署脚本误删 `build/`、压测失败被吞掉（`920d97e`）
 - [x] 发布到 GitHub：github.com/hwang-protocol/rtb-lab（公开）
-- [ ] 🟡 **Loki + Alloy 集中日志**：已部署到虚拟机并验证可用，**代码还没提交**
-  - 文件：`monitoring/loki/`、`monitoring/alloy/`、Grafana 数据源和日志面板、Prometheus 抓取、ExporterDown 规则、README
-  - 同批改动：大盘无数据时显示说明文字（"✅ 没有告警"等）
-  - 下一步：你在 VS Code 里看完 → 我在本地提交 → **你说推才推**
-- [ ] 🟡 讨论稿 `docs/why-chain-oom-and-fd.md`（OOM 和 fd 的"一直问为什么"），未提交
+- [x] Loki + Alloy 集中日志（`ea12659`）；大盘日志面板和无数据说明文字（`76ac64f`）
+- [x] 讨论稿 `docs/why-chain-oom-and-fd.md`（`7c6032f`）
 - [x] 流程图网页（私有链接，需要时在 Share 菜单里分享）：https://claude.ai/artifact/99pYCpwdwiuVeftBjr9jsq
 
 ---
@@ -66,7 +63,7 @@
 - [x] 配置先检查再替换（`validate`）；Prometheus 改规则只 reload 不重启（服务文件加了 `ExecReload`）
 - [x] 验证幂等：第一次 `changed=18`（从 bash 版迁移），第二次 `changed=0`；修了 rsync 目录时间导致的假变化
 - [x] 重跑 `verify-alerting.sh`：触发 / 恢复 / 静默 / 抑制全部通过，和 bash 版结果一致
-- [ ] 🟡 提交（等你看完）
+- [x] 提交（`6906f13`、`eb5af31`、`09ba2ae`），2026-10-20 已推送
 - [ ] 旧的 bash 脚本保留一段时间，确认没问题后删除
 
 ---
