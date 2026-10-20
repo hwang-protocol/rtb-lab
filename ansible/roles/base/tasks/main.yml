@@ -1,0 +1,4 @@
+- name: 安装基础软件包（Java 21 用来编译和运行；rsync 用来同步代码）
+  ansible.builtin.dnf:
+    name: [java-21-openjdk-devel, rsync, python3, openssl]
+    state: present

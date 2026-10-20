@@ -1,0 +1,49 @@
+- name: 创建服务专用用户 rtb（不能登录）
+  ansible.builtin.user:
+    name: rtb
+    system: true
+    create_home: false
+    shell: /sbin/nologin
+
+- name: 创建程序和日志目录
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: rtb
+    group: rtb
+    mode: "0755"
+  loop: [/opt/rtb-bidder, /opt/rtb-bidder/classes, /var/log/rtb-bidder]
+
+- name: 安装编译好的 class 文件
+  ansible.builtin.copy:
+    src: "{{ repo_dir }}/build/bidder/"
+    dest: /opt/rtb-bidder/classes/
+    remote_src: true
+    owner: rtb
+    group: rtb
+  notify: restart rtb-bidder
+
+- name: 安装 systemd 服务文件
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/deploy/rtb-bidder.service"
+    dest: /etc/systemd/system/rtb-bidder.service
+    mode: "0644"
+  notify: restart rtb-bidder
+
+- name: 开机自启并启动
+  ansible.builtin.systemd:
+    name: rtb-bidder
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: 立即执行待处理的重启（下面要做健康检查）
+  ansible.builtin.meta: flush_handlers
+
+- name: 等待健康检查通过
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8080/health
+  register: health
+  until: health.status == 200
+  retries: 30
+  delay: 1

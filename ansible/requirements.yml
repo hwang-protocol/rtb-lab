@@ -1,0 +1,4 @@
+# 用到的 Ansible 扩展（collection），版本固定。安装：ansible-galaxy collection install -r requirements.yml
+collections:
+  - name: ansible.posix      # 提供 synchronize（rsync 同步代码）
+    version: 2.2.2

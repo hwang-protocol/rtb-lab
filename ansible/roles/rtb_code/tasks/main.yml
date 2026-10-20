@@ -1,0 +1,27 @@
+- name: 同步代码到目标机器（保留目标机器上已编译的 build/）
+  ansible.posix.synchronize:
+    src: "{{ repo_root }}/"
+    dest: "{{ repo_dir }}/"
+    delete: true
+    rsync_opts:
+      - "--omit-dir-times"     # 不同步目录的修改时间：编译会改动根目录时间，否则每次都显示有变化
+      - "--exclude=.git"
+      - "--exclude=build/"
+      - "--exclude=ansible/collections/"
+  register: code_sync
+
+- name: 检查是否已经编译过
+  ansible.builtin.stat:
+    path: "{{ repo_dir }}/build/bidder/Bidder.class"
+  register: bidder_class
+
+- name: 编译竞价服务和压测程序（代码有变化，或者还没编译过）
+  ansible.builtin.shell: |
+    set -euo pipefail
+    rm -rf build && mkdir -p build/bidder build/loadgen
+    javac -d build/bidder bidder/src/*.java
+    javac -d build/loadgen loadgen/src/*.java
+  args:
+    chdir: "{{ repo_dir }}"
+    executable: /bin/bash
+  when: code_sync is changed or not bidder_class.stat.exists

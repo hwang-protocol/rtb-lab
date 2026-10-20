@@ -1,3 +1,6 @@
 build/
 *.class
 results/*.tmp
+
+# Ansible 扩展（由 ansible/requirements.yml 安装，不进仓库）
+ansible/collections/

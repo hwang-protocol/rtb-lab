@@ -1,0 +1,18 @@
+# 部署整个 rtb-lab：ansible-playbook site.yml
+# 只部署一部分：ansible-playbook site.yml --tags bidder（或 monitoring、loki ……）
+- name: 基础环境（所有机器）
+  hosts: all
+  become: true
+  roles:
+    - { role: base, tags: [base] }
+
+- name: 代码同步和编译（竞价服务、压测程序所在机器）
+  hosts: bidder:loadgen
+  roles:
+    - { role: rtb_code, tags: [bidder, loadgen, code] }
+
+- name: 竞价服务
+  hosts: bidder
+  become: true
+  roles:
+    - { role: bidder, tags: [bidder] }

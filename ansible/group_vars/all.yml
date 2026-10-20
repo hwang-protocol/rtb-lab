@@ -1,0 +1,18 @@
+# 全局变量：版本号、路径。改版本只改这里。
+
+# 仓库根目录（Mac 上，也就是控制端）；playbook 直接引用 monitoring/ 和 deploy/ 里的配置文件，不复制一份
+repo_root: "{{ playbook_dir | dirname }}"
+# 虚拟机 / EC2 上的代码目录（压测脚本、验证脚本从这里运行）
+repo_dir: "/home/{{ ansible_user }}/rtb-lab"
+
+# CPU 架构：Apple 芯片虚拟机和 Graviton EC2 都是 aarch64 → arm64；x86 机器 → amd64
+prom_arch: "{{ 'arm64' if ansible_facts.architecture == 'aarch64' else 'amd64' }}"
+
+prometheus_version: 3.15.0
+alertmanager_version: 0.34.1
+node_exporter_version: 1.12.1
+loki_version: 3.7.8
+alloy_version: 1.20.1
+
+# Grafana 管理员密码：只保存在目标机器上这个文件里（首次随机生成），不进仓库
+grafana_password_file: "/home/{{ ansible_user }}/.config/rtb-lab/grafana-admin-password"

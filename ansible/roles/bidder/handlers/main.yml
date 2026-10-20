@@ -1,0 +1,5 @@
+- name: restart rtb-bidder
+  ansible.builtin.systemd:
+    name: rtb-bidder
+    state: restarted
+    daemon_reload: true
