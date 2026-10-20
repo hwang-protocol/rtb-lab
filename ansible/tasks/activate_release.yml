@@ -10,14 +10,26 @@
 - name: 重启竞价服务（符号链接只在启动时解析，必须重启）
   ansible.builtin.systemd: { name: rtb-bidder, state: restarted, daemon_reload: true }
 
-- name: "健康检查：/health 返回的版本必须是 {{ release }}"
-  ansible.builtin.uri:
-    url: http://127.0.0.1:8080/health
-    return_content: true
-  register: health
-  until: health.status == 200 and ('ok ' ~ release) in health.content
-  retries: "{{ health_retries | default(20) }}"
-  delay: 1
+# 一边等健康检查通过，一边看 systemd 的自动重启次数 NRestarts（手动 restart 时归零）。
+# 只要它大于 0，说明新版本启动后崩溃、被 systemd 拉起过，不用等满重试次数，立刻判定失败。
+# 演练 #03：只看健康检查时，坏版本要 20 秒才判定失败，服务中断约 28 秒。
+- name: "健康检查：/health 返回的版本必须是 {{ release }}；发现反复崩溃就立刻失败"
+  ansible.builtin.shell: |
+    for i in $(seq 1 {{ health_retries | default(20) }}); do
+      if curl -sf http://127.0.0.1:8080/health | grep -qx "ok {{ release }}"; then
+        echo "健康：第 ${i} 次检查通过"; exit 0
+      fi
+      restarts=$(systemctl show -p NRestarts --value rtb-bidder)
+      if [ "$restarts" -gt 0 ]; then
+        echo "新版本启动后崩溃，已被 systemd 自动重启 ${restarts} 次。最近的日志："
+        journalctl -u rtb-bidder -n 3 --no-pager -o cat
+        exit 1
+      fi
+      sleep 0.5
+    done
+    echo "超时：$(( {{ health_retries | default(20) }} / 2 )) 秒内健康检查没有通过"; exit 1
+  args: { executable: /bin/bash }
+  changed_when: false
 
 - name: 冒烟测试：发一个真实的竞价请求，必须返回 200（出价）或 204（不出价）
   ansible.builtin.uri:
