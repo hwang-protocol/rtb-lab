@@ -1,0 +1,83 @@
+- name: 添加 Grafana 官方软件源
+  ansible.builtin.include_tasks: repo.yml
+
+- name: 安装 Grafana
+  ansible.builtin.dnf: { name: grafana, state: present }
+
+# ---------- 管理员密码：不进仓库，只在目标机器上生成和保存 ----------
+- name: 密码文件所在目录（只有登录用户本人可读）
+  ansible.builtin.file:
+    path: "{{ grafana_password_file | dirname }}"
+    state: directory
+    owner: "{{ ansible_user }}"
+    mode: "0700"
+
+- name: 首次运行时随机生成管理员密码（已有就不动）
+  ansible.builtin.shell: "umask 077 && openssl rand -base64 18 > {{ grafana_password_file }}"
+  args:
+    creates: "{{ grafana_password_file }}"
+
+- name: 密码文件归登录用户所有
+  ansible.builtin.file: { path: "{{ grafana_password_file }}", owner: "{{ ansible_user }}", mode: "0600" }
+
+- name: 读取密码
+  ansible.builtin.slurp: { src: "{{ grafana_password_file }}" }
+  register: grafana_pw
+  no_log: true
+
+- name: 检查 sysconfig 是否已经由 Ansible 管理
+  ansible.builtin.command: grep -q "BEGIN rtb-lab" /etc/sysconfig/grafana-server
+  register: gf_managed
+  failed_when: false
+  changed_when: false
+
+- name: 迁移（只执行一次）：删除旧 bash 脚本直接追加的 GF_ 行，改由下面的托管区块统一管理
+  ansible.builtin.replace:
+    path: /etc/sysconfig/grafana-server
+    regexp: '^GF_.*\n'
+    replace: ""
+  when: gf_managed.rc != 0
+  no_log: true
+
+- name: Grafana 环境变量（systemd 服务从 /etc/sysconfig/grafana-server 读取）
+  ansible.builtin.blockinfile:
+    path: /etc/sysconfig/grafana-server
+    marker: "# {mark} rtb-lab 由 Ansible 管理"
+    mode: "0640"
+    block: |
+      GF_SERVER_HTTP_ADDR=127.0.0.1
+      GF_SECURITY_ADMIN_PASSWORD={{ grafana_pw.content | b64decode | trim }}
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/rtb-overview.json
+      GF_ANALYTICS_REPORTING_ENABLED=false
+      GF_ANALYTICS_CHECK_FOR_UPDATES=false
+  no_log: true          # 不在输出里打印密码
+  notify: restart grafana-server
+
+# ---------- 数据源和大盘 ----------
+- name: 数据源配置（Prometheus、Loki）
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/monitoring/grafana/datasource.yml"
+    dest: /etc/grafana/provisioning/datasources/rtb-lab.yml
+    mode: "0644"
+  notify: restart grafana-server
+
+- name: 大盘加载配置
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/monitoring/grafana/dashboards.yml"
+    dest: /etc/grafana/provisioning/dashboards/rtb-lab.yml
+    mode: "0644"
+  notify: restart grafana-server
+
+- name: 大盘目录
+  ansible.builtin.file: { path: /var/lib/grafana/dashboards, state: directory, owner: grafana, group: grafana, mode: "0755" }
+
+- name: 大盘 JSON（Grafana 每 30 秒自动重新读取，不用重启）
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/monitoring/grafana/rtb-overview.json"
+    dest: /var/lib/grafana/dashboards/rtb-overview.json
+    owner: grafana
+    group: grafana
+    mode: "0644"
+
+- name: 开机自启并启动
+  ansible.builtin.systemd: { name: grafana-server, enabled: true, state: started, daemon_reload: true }

@@ -1,0 +1,10 @@
+- name: Grafana 官方 RPM 软件源
+  ansible.builtin.yum_repository:
+    name: grafana
+    description: grafana
+    baseurl: https://rpm.grafana.com
+    gpgcheck: true
+    repo_gpgcheck: true
+    gpgkey: https://rpm.grafana.com/gpg.key
+    sslverify: true
+    sslcacert: /etc/pki/tls/certs/ca-bundle.crt

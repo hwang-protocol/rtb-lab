@@ -24,3 +24,6 @@
     - { role: node_exporter, tags: [monitoring, node_exporter] }
     - { role: alertmanager, tags: [monitoring, alertmanager] }
     - { role: prometheus, tags: [monitoring, prometheus] }
+    - { role: loki, tags: [monitoring, loki] }
+    - { role: alloy, tags: [monitoring, alloy] }
+    - { role: grafana, tags: [monitoring, grafana] }

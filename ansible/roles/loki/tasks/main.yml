@@ -1,0 +1,22 @@
+- name: 添加 Grafana 官方软件源（Loki、Alloy、Grafana 都从这里安装，dnf 校验 GPG 签名）
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/roles/grafana/tasks/repo.yml"
+
+- name: "安装 Loki {{ loki_version }}"
+  ansible.builtin.dnf:
+    name: "loki-{{ loki_version }}"
+    state: present
+  notify: restart loki
+
+- name: 数据目录（默认配置放在 /tmp，重启会丢；改到 /var/lib/loki）
+  ansible.builtin.file: { path: /var/lib/loki, state: directory, owner: loki, group: loki, mode: "0755" }
+
+- name: 安装配置（先用 loki -verify-config 检查）
+  ansible.builtin.copy:
+    src: "{{ repo_root }}/monitoring/loki/loki.yml"
+    dest: /etc/loki/config.yml
+    mode: "0644"
+    validate: /usr/bin/loki -verify-config -config.file=%s
+  notify: restart loki
+
+- name: 开机自启并启动
+  ansible.builtin.systemd: { name: loki, enabled: true, state: started, daemon_reload: true }
